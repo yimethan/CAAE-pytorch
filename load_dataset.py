@@ -9,11 +9,13 @@ from config import Config
 
 class GetDataset(Dataset):
 
-    def __init__(self):
+    def __init__(self, labeled=True):
 
         super(GetDataset, self).__init__()
 
         self.data_root = Config.data_root
+
+        self.labeled = labeled
 
         self.images = []
         self.labels = []
@@ -23,6 +25,9 @@ class GetDataset(Dataset):
         self.transform = transforms.Compose([
             transforms.ToTensor()
         ])
+
+    def __len__(self):
+        return len(self.images)
 
     def __getitem__(self, item):
 

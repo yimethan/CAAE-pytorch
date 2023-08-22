@@ -4,14 +4,17 @@ import torch.nn.functional as F
 import numpy as np
 import os
 from sklearn.metrics import confusion_matrix
-from torch.optim import Adam
+from torch.optim import Adam, lr_scheduler
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import random_split, DataLoader
 
 from config import Config
-from caae import CAAE
+from caae import *
+from load_dataset import *
 
+writer = SummaryWriter()
 
-def gradient_penalty(self, real_samples, g_samples, discriminator):
+def gradient_penalty(real_samples, g_samples, discriminator):
     batch_size = real_samples.size(0)
     alpha = torch.rand(batch_size, 1)
     alpha = alpha.expand(batch_size, real_samples.size(1))  # Make alpha the same size as real_samples
@@ -24,9 +27,138 @@ def gradient_penalty(self, real_samples, g_samples, discriminator):
                                     grad_outputs=torch.ones(d_interpolates.size()),
                                     create_graph=True, retain_graph=True, only_inputs=True)[0]
 
-    slopes = torch.sqrt(torch.sum(gradients**2, dim=1))
-    gradient_penalty = torch.mean((slopes - 1.)**2)
+    slopes = torch.sqrt(torch.sum(gradients ** 2, dim=1))
+    gradient_penalty = torch.mean((slopes - 1.) ** 2)
     return gradient_penalty
+
+
+encoder = Encoder()
+decoder = Decoder()
+discriminator_g = Discriminator('g')
+discriminator_c = Discriminator('c')
+
+autoencoder_optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()),
+                         lr=Config.reconstruction_lr, betas=(Config.beta1, Config.beta2))
+discriminator_g_optimizer = Adam(discriminator_g.parameters(), lr=Config.regularization_lr)
+discriminator_c_optimizer = Adam(discriminator_c.parameters(), lr=Config.regularization_lr)
+generator_optimizer = Adam(generator.parameters(), lr=Config.regularization_lr)
+supervised_encoder_optimizer = Adam(supervised_encoder.parameters(), lr=Config.supervised_lr)
+
+reconstruction_scheduler = lr_scheduler.StepLR(autoencoder_optimizer, step_size=50, gamma=0.9)
+supervised_scheduler = lr_scheduler.StepLR(supervised_encoder_optimizer, step_size=50, gamma=0.9)
+disc_g_scheduler = lr_scheduler.StepLR(discriminator_g_optimizer, step_size=50, gamma=0.9)
+disc_c_scheduler = lr_scheduler.StepLR(discriminator_c_optimizer, step_size=50, gamma=0.9)
+
+# if epoch == 50:
+        #     self.supervised_lr /= 10
+        #     self.reconstruction_lr /= 10
+        #     self.regularization_lr /= 10
+
+dataset = GetDataset()
+
+train_len = int(len(dataset) * 0.7)
+train_labeled_size = int(train_len * Config.labeled_percentage)
+train_unlabeled_size = train_len - train_labeled_size
+
+test_len = len(dataset) - train_len
+test_labeled_size = int(test_len * Config.labeled_percentage)
+test_unlabeled_size = test_len - test_labeled_size
+
+unlabeled_batch_size = Config.batch_size * ((train_labeled_size + test_labeled_size) / (train_unlabeled_size + test_unlabeled_size))
+# unlabeled_iterations_per_epoch = (train_unlabeled_size + test_unlabeled_size) // unlabeled_batch_size
+
+train_labeled_data, train_unlabeled_data, test_labeled_data, test_unlabeled_data = random_split(dataset,
+                                                                            [train_labeled_size, train_unlabeled_size,
+                                                                            test_labeled_size, test_unlabeled_size])
+
+train_labeled_loader = DataLoader(train_labeled_data, batch_size=Config.batch_size, shuffle=False)
+test_labeled_loader = DataLoader(test_labeled_data, batch_size=Config.batch_size, shuffle=False)
+train_unlabeled_loader = DataLoader(train_unlabeled_data, batch_size=unlabeled_batch_size, shuffle=False)
+test_unlabeled_loader = DataLoader(test_unlabeled_data, batch_size=unlabeled_batch_size, shuffle=False)
+
+
+def train():
+
+    for epoch in range(Config.epochs):
+
+        encoder.train()
+        decoder.train()
+        discriminator_g.train()
+        discriminator_c.train()
+
+        for labeled, unlabeled in zip(enumerate(train_labeled_loader), enumerate(train_unlabeled_loader)):
+
+            l_batch_idx, (l_inputs, l_labels) = labeled
+            unl_batch_idx, (unl_inputs, target) = unlabeled
+
+            encoder_output_label, encoder_output_latent = encoder(unl_inputs, Config.keep_prob)
+            decoder_input = torch.cat((encoder_output_label, encoder_output_latent), dim=1)
+            decoder_output = decoder(decoder_input)
+
+            autoencoder_loss = F.mse_loss(decoder_output, target)
+
+            autoencoder_optimizer.zero_grad()
+            autoencoder_loss.backward()
+            autoencoder_optimizer.step()
+
+            writer.add_scalar('loss/autoencoder_loss', autoencoder_loss)
+
+            # dis for gaussian
+            d_g_real = discriminator_g(real_distribution)
+            d_g_fake = discriminator_g(encoder_output_latent)
+
+            d_c_real = discriminator_c(categorical_distribution)
+            d_c_fake = discriminator_c(encoder_output_label)
+
+            # wgan-gp
+            dc_g_loss = -torch.mean(d_g_real) + torch.mean(d_g_fake) \
+                        + 10.0 * gradient_penalty(real_distribution, encoder_output_latent, discriminator_g)
+            dc_c_loss = -torch.mean(d_c_real) + torch.mean(d_c_fake) \
+                        + 10.0 * gradient_penalty(categorial_distribution, encoder_output_label, discriminator_c)
+
+            dc_g_var = [var for var in discriminator_g.parameters() if 'dc_g_' in var.name]
+            dc_c_var = [var for var in discriminator_c.parameters() if 'dc_c_' in var.name]
+
+            discriminator_g_optimizer.zero_grad()
+            dc_g_loss.backward()
+            discriminator_g_optimizer.step()
+
+            discriminator_c_optimizer.zero_grad()
+            dc_c_loss.backward()
+            discriminator_c_optimizer.step()
+
+            generator_loss = -torch.mean(d_g_fake) - torch.mean(d_c_fake)
+
+            generator_optimizer.zero_grad()
+            generator_loss.backward()
+            generator_optimizer.step()
+
+            # Semi-Supervised Classification Phase
+            encoder_output_label_, encoder_output_latent_ = encoder(x_input_l, supervised=True)
+
+            output_label = torch.argmax(encoder_output_label_, dim=1)
+            correct_pred = output_label.eq(torch.argmax(y_input, dim=1))
+            accuracy = torch.mean(correct_pred.float())
+
+            supervised_encoder_loss = nn.functional.cross_entropy(encoder_output_label_, labels)
+
+            supervised_encoder_optimizer.zero_grad()
+            supervised_encoder_loss.backward()
+            supervised_encoder_optimizer.step()
+
+
+def test():
+
+    encoder.eval()
+    decoder.eval()
+    discriminator_g.eval()
+    discriminator_c.eval()
+
+    with torch.no_grad():
+        for labeled, unlabeled in zip(enumerate(test_labeled_loader), enumerate(test_unlabeled_loader)):
+
+            l_batch_idx, (l_inputs, l_labels) = labeled
+            unl_batch_idx, (unl_inputs, _) = unlabeled
 
 
 # def build(self):

@@ -8,14 +8,13 @@ from config import Config
 
 class Encoder(nn.Module):
 
-    def __init__(self, reuse=False, supervised=False):
+    def __init__(self, keep_prob=Config.keep_prob, supervised=False):
 
         super(Encoder, self).__init__()
         self.n_labels = Config.n_labels
         self.z_dim = Config.z_dim
 
-        self.keep_prob = Config.keep_prob
-        self.reuse = reuse
+        self.keep_prob = keep_prob
         self.supervised = supervised
 
         self.conv0 = nn.ReLU(nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3))
@@ -107,31 +106,14 @@ class Decoder(nn.Module):
         return x
 
 
-class CAAE(nn.Module):
-
-    def __init__(self):
-        super(CAAE, self).__init__()
-
-        self.encoder = Encoder()
-        self.decoder = Decoder()
-
-        self.keep_prob = Config.keep_prob
-
-    def forward(self, x):
-        encoder_output_label, encoder_output_latent = self.encoder(x, self.keep_prob)
-        decoder_input = torch.cat((encoder_output_label, encoder_output_latent), dim=1)
-        decoder_output = self.decoder(decoder_input)
-
-        return decoder_output
-
-
 class Discriminator(nn.Module):
 
-    def __init__(self):
+    def __init__(self, tag='g'):
         super(Discriminator, self).__init__()
 
         self.z_dim = Config.z_dim
         self.n_labels = Config.n_labels
+        self.tag = tag
 
         self.ds0 = nn.ReLU(nn.Linear(self.z_dim, 1000))
         self.ds1 = nn.ReLU(nn.Linear(1000, 1000))
@@ -155,3 +137,10 @@ class Discriminator(nn.Module):
         x = self.sigmoid(x)
 
         return x
+
+    def forward(self, x):
+        if self.tag == 'g':
+            return self.discriminator_gauss(x)
+
+        else:
+            return self.discriminator_categorical(x)
