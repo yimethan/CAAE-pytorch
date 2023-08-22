@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import os
 from sklearn.metrics import confusion_matrix
-import torch.optim as optim
+from torch.optim import Adam
 from torch.utils.tensorboard import SummaryWriter
 
 from config import Config
-from models.model import Model
+from caae import CAAE
 
 
 def gradient_penalty(self, real_samples, g_samples, discriminator):
@@ -28,22 +29,17 @@ def gradient_penalty(self, real_samples, g_samples, discriminator):
     return gradient_penalty
 
 
-import torch
-import torch.nn.functional as F
-from torch.optim import Adam
-
-
-def build(self):
-    self.is_build = True
-    self.x_input = torch.placeholder(dtype=torch.float32, shape=[None, self.input_dim])
-    self.x_input_l = torch.placeholder(dtype=torch.float32, shape=[None, self.input_dim])
-    self.y_input = torch.placeholder(dtype=torch.float32, shape=[None, self.n_labels])
-    self.x_target = torch.placeholder(dtype=torch.float32, shape=[None, self.input_dim])
-    self.real_distribution = torch.placeholder(dtype=torch.float32, shape=[None, self.z_dim])
-    self.categorial_distribution = torch.placeholder(dtype=torch.float32, shape=[None, self.n_labels])
-    self.manual_decoder_input = torch.placeholder(dtype=torch.float32, shape=[1, self.z_dim + self.n_labels])
-    self.learning_rate = torch.placeholder(torch.float32, shape=[])
-    self.keep_prob = torch.placeholder(torch.float32, shape=[])
+# def build(self):
+#     self.is_build = True
+#     self.x_input = torch.placeholder(dtype=torch.float32, shape=[None, self.input_dim])
+#     self.x_input_l = torch.placeholder(dtype=torch.float32, shape=[None, self.input_dim])
+#     self.y_input = torch.placeholder(dtype=torch.float32, shape=[None, self.n_labels])
+#     self.x_target = torch.placeholder(dtype=torch.float32, shape=[None, self.input_dim])
+#     self.real_distribution = torch.placeholder(dtype=torch.float32, shape=[None, self.z_dim])
+#     self.categorial_distribution = torch.placeholder(dtype=torch.float32, shape=[None, self.n_labels])
+#     self.manual_decoder_input = torch.placeholder(dtype=torch.float32, shape=[1, self.z_dim + self.n_labels])
+#     self.learning_rate = torch.placeholder(torch.float32, shape=[])
+#     self.keep_prob = torch.placeholder(torch.float32, shape=[])
 
     # Reconstruction Phase
     self.encoder_output_label, self.encoder_output_latent = self.model.encoder(self.x_input, self.keep_prob)
