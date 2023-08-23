@@ -1,2 +1,6 @@
 original
 .ipynb_checkpoints
+scalars.json
+runs
+.idea/
+__pycache__/

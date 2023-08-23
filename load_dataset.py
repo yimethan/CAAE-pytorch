@@ -35,7 +35,7 @@ class GetDataset(Dataset):
         img = Image.open(img).convert('L')
         img = self.transform(img)
 
-        return {'input', img, 'label', self.labels[item]}
+        return {'input': img, 'label': self.labels[item]}
 
     def load_from_dir(self):
 

@@ -1,8 +1,6 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import os
 from sklearn.metrics import confusion_matrix
 from torch.optim import Adam, lr_scheduler
 from torch.utils.tensorboard import SummaryWriter
@@ -14,11 +12,21 @@ from load_dataset import *
 
 writer = SummaryWriter()
 
+
 def gradient_penalty(real_samples, g_samples, discriminator):
+    """
+    calculates the gradient penalty term used in the Wasserstein GAN with Gradient Penalty (WGAN-GP) loss
+    :param real_samples: Real data samples from the dataset
+    :param g_samples: Generated samples produced by the generator
+    :param discriminator: The discriminator network
+    :return: The calculated gradient penalty is returned as the output of the function
+    """
     batch_size = real_samples.size(0)
     alpha = torch.rand(batch_size, 1)
     alpha = alpha.expand(batch_size, real_samples.size(1))  # Make alpha the same size as real_samples
     interpolates = alpha * real_samples + ((1 - alpha) * g_samples)
+    # a linear combination of real_samples and g_samples using the alpha factor
+    # represents the points between real and generated data in the input space
 
     interpolates.requires_grad_(True)  # Enable gradient computation
     d_interpolates = discriminator(interpolates)
@@ -28,8 +36,9 @@ def gradient_penalty(real_samples, g_samples, discriminator):
                                     create_graph=True, retain_graph=True, only_inputs=True)[0]
 
     slopes = torch.sqrt(torch.sum(gradients ** 2, dim=1))
-    gradient_penalty = torch.mean((slopes - 1.) ** 2)
-    return gradient_penalty
+    g_penalty = torch.mean((slopes - 1.) ** 2)
+
+    return g_penalty
 
 
 encoder = Encoder()
@@ -38,21 +47,19 @@ discriminator_g = Discriminator('g')
 discriminator_c = Discriminator('c')
 
 autoencoder_optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()),
-                         lr=Config.reconstruction_lr, betas=(Config.beta1, Config.beta2))
-discriminator_g_optimizer = Adam(discriminator_g.parameters(), lr=Config.regularization_lr)
-discriminator_c_optimizer = Adam(discriminator_c.parameters(), lr=Config.regularization_lr)
-generator_optimizer = Adam(generator.parameters(), lr=Config.regularization_lr)
-supervised_encoder_optimizer = Adam(supervised_encoder.parameters(), lr=Config.supervised_lr)
+                             lr=Config.reconstruction_lr, betas=(Config.beta1, Config.beta2))
+discriminator_g_optimizer = Adam(discriminator_g.parameters(), lr=Config.regularization_lr,
+                                 betas=(Config.beta1, Config.beta2))
+discriminator_c_optimizer = Adam(discriminator_c.parameters(), lr=Config.regularization_lr,
+                                 betas=(Config.beta1, Config.beta2))
+generator_optimizer = Adam(encoder.parameters(), lr=Config.regularization_lr, betas=(Config.beta1, Config.beta2))
+supervised_encoder_optimizer = Adam(encoder.parameters(), lr=Config.supervised_lr,
+                                    betas=(Config.beta1_sup, Config.beta2))
 
 reconstruction_scheduler = lr_scheduler.StepLR(autoencoder_optimizer, step_size=50, gamma=0.9)
 supervised_scheduler = lr_scheduler.StepLR(supervised_encoder_optimizer, step_size=50, gamma=0.9)
 disc_g_scheduler = lr_scheduler.StepLR(discriminator_g_optimizer, step_size=50, gamma=0.9)
 disc_c_scheduler = lr_scheduler.StepLR(discriminator_c_optimizer, step_size=50, gamma=0.9)
-
-# if epoch == 50:
-        #     self.supervised_lr /= 10
-        #     self.reconstruction_lr /= 10
-        #     self.regularization_lr /= 10
 
 dataset = GetDataset()
 
@@ -61,24 +68,43 @@ train_labeled_size = int(train_len * Config.labeled_percentage)
 train_unlabeled_size = train_len - train_labeled_size
 
 test_len = len(dataset) - train_len
-test_labeled_size = int(test_len * Config.labeled_percentage)
-test_unlabeled_size = test_len - test_labeled_size
 
-unlabeled_batch_size = Config.batch_size * ((train_labeled_size + test_labeled_size) / (train_unlabeled_size + test_unlabeled_size))
-# unlabeled_iterations_per_epoch = (train_unlabeled_size + test_unlabeled_size) // unlabeled_batch_size
+unlabeled_batch_size = int(Config.batch_size * (train_labeled_size / train_unlabeled_size))
 
-train_labeled_data, train_unlabeled_data, test_labeled_data, test_unlabeled_data = random_split(dataset,
-                                                                            [train_labeled_size, train_unlabeled_size,
-                                                                            test_labeled_size, test_unlabeled_size])
+train_labeled_data, train_unlabeled_data, test_data = random_split(dataset,
+                                                                [train_labeled_size, train_unlabeled_size, test_len])
 
 train_labeled_loader = DataLoader(train_labeled_data, batch_size=Config.batch_size, shuffle=False)
-test_labeled_loader = DataLoader(test_labeled_data, batch_size=Config.batch_size, shuffle=False)
 train_unlabeled_loader = DataLoader(train_unlabeled_data, batch_size=unlabeled_batch_size, shuffle=False)
-test_unlabeled_loader = DataLoader(test_unlabeled_data, batch_size=unlabeled_batch_size, shuffle=False)
+test_loader = DataLoader(test_data, batch_size=unlabeled_batch_size, shuffle=False)
+
+
+def evaluate(y_true, y_pred, epoch):
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    fnr = fn / (tp + fn)
+    err = (fn + fp) / (tp + tn + fp + fn)
+    precision = tp / (tp + fp)
+    recall = 1 - fnr
+    f1score = (2 * precision * recall) / (precision + recall)
+
+    print('---Test results-------')
+
+    print(tp, fn)
+    print(fp, tn)
+    print('False negative rate: ', fnr)
+    print('Error rate: ', err)
+    print('Precision: ', precision)
+    print('Recall: ', recall)
+    print('F1 score: ', f1score)
+
+    writer.add_scalar('test/False_negative_rate', fnr, epoch)
+    writer.add_scalar('test/Error_rate', err, epoch)
+    writer.add_scalar('test/Precision', precision, epoch)
+    writer.add_scalar('test/Recall', recall, epoch)
+    writer.add_scalar('test/F1_score', f1score, epoch)
 
 
 def train():
-
     for epoch in range(Config.epochs):
 
         encoder.train()
@@ -86,38 +112,46 @@ def train():
         discriminator_g.train()
         discriminator_c.train()
 
-        for labeled, unlabeled in zip(enumerate(train_labeled_loader), enumerate(train_unlabeled_loader)):
+        print("------------------ Epoch {}/{} ------------------".format(epoch, Config.epochs))
 
-            l_batch_idx, (l_inputs, l_labels) = labeled
-            unl_batch_idx, (unl_inputs, target) = unlabeled
+        for batch_idx, labeled in enumerate(train_labeled_loader):
+            unlabeled = next(iter(train_unlabeled_loader))
 
-            encoder_output_label, encoder_output_latent = encoder(unl_inputs, Config.keep_prob)
+            autoencoder_optimizer.zero_grad()
+            discriminator_g_optimizer.zero_grad()
+            discriminator_c_optimizer.zero_grad()
+            generator_optimizer.zero_grad()
+            supervised_encoder_optimizer.zero_grad()
+
+            x_labeled, y_labeled = labeled['input'], labeled['label']
+            x_unlabeled, y_unlabeled = unlabeled['input'], unlabeled['label']
+
+            z_real_dist = torch.randn(Config.batch_size, Config.z_dim) * 5.
+            real_cat_dist = torch.randint(low=0, high=2, size=(Config.batch_size,))
+            real_cat_dist = torch.eye(Config.n_labels)[real_cat_dist]
+
+            encoder_output_label, encoder_output_latent = encoder(x_unlabeled)
             decoder_input = torch.cat((encoder_output_label, encoder_output_latent), dim=1)
             decoder_output = decoder(decoder_input)
 
-            autoencoder_loss = F.mse_loss(decoder_output, target)
+            autoencoder_loss = F.mse_loss(decoder_output, x_unlabeled)
 
             autoencoder_optimizer.zero_grad()
             autoencoder_loss.backward()
             autoencoder_optimizer.step()
 
-            writer.add_scalar('loss/autoencoder_loss', autoencoder_loss)
-
             # dis for gaussian
-            d_g_real = discriminator_g(real_distribution)
+            d_g_real = discriminator_g(z_real_dist)
             d_g_fake = discriminator_g(encoder_output_latent)
 
-            d_c_real = discriminator_c(categorical_distribution)
+            d_c_real = discriminator_c(real_cat_dist)
             d_c_fake = discriminator_c(encoder_output_label)
 
             # wgan-gp
-            dc_g_loss = -torch.mean(d_g_real) + torch.mean(d_g_fake) \
-                        + 10.0 * gradient_penalty(real_distribution, encoder_output_latent, discriminator_g)
-            dc_c_loss = -torch.mean(d_c_real) + torch.mean(d_c_fake) \
-                        + 10.0 * gradient_penalty(categorial_distribution, encoder_output_label, discriminator_c)
-
-            dc_g_var = [var for var in discriminator_g.parameters() if 'dc_g_' in var.name]
-            dc_c_var = [var for var in discriminator_c.parameters() if 'dc_c_' in var.name]
+            real_penalty = gradient_penalty(z_real_dist, encoder_output_latent, discriminator_g)
+            dc_g_loss = -torch.mean(d_g_real) + torch.mean(d_g_fake) + 10.0 * real_penalty
+            fake_penalty = gradient_penalty(real_cat_dist, encoder_output_label, discriminator_c)
+            dc_c_loss = -torch.mean(d_c_real) + torch.mean(d_c_fake) + 10.0 * fake_penalty
 
             discriminator_g_optimizer.zero_grad()
             dc_g_loss.backward()
@@ -129,357 +163,75 @@ def train():
 
             generator_loss = -torch.mean(d_g_fake) - torch.mean(d_c_fake)
 
-            generator_optimizer.zero_grad()
             generator_loss.backward()
             generator_optimizer.step()
 
             # Semi-Supervised Classification Phase
-            encoder_output_label_, encoder_output_latent_ = encoder(x_input_l, supervised=True)
+            encoder_output_label_, encoder_output_latent_ = encoder(x_labeled, supervised=True)
 
+            # Classification accuracy of encoder
             output_label = torch.argmax(encoder_output_label_, dim=1)
-            correct_pred = output_label.eq(torch.argmax(y_input, dim=1))
+            correct_pred = output_label.eq(torch.argmax(y_labeled, dim=1))
             accuracy = torch.mean(correct_pred.float())
 
-            supervised_encoder_loss = nn.functional.cross_entropy(encoder_output_label_, labels)
+            supervised_encoder_loss = F.cross_entropy(encoder_output_label_, y_labeled)
 
             supervised_encoder_optimizer.zero_grad()
             supervised_encoder_loss.backward()
             supervised_encoder_optimizer.step()
 
+        writer.add_scalar('train/loss/autoencoder_loss', autoencoder_loss, epoch)
+        writer.add_scalar('train/loss/dc_g_loss', dc_g_loss, epoch)
+        writer.add_scalar('train/loss/dc_c_loss', dc_c_loss, epoch)
+        writer.add_scalar('train/loss/generator_loss', generator_loss, epoch)
+        writer.add_scalar('train/loss/supervised_encoder_loss', supervised_encoder_loss, epoch)
 
-def test():
+        writer.add_scalar('train/encoder_accuracy', accuracy, epoch)
 
-    encoder.eval()
-    decoder.eval()
-    discriminator_g.eval()
-    discriminator_c.eval()
+        writer.add_image('train/decoder_output', decoder_output[0], epoch)
+
+        reconstruction_scheduler.step()
+        supervised_scheduler.step()
+        disc_g_scheduler.step()
+        disc_c_scheduler.step()
+
+        test(epoch)
+
+
+def test(epoch):
+    y_true = []
+    y_pred = []
+    # total_prob = []
+    # total_latent = []
 
     with torch.no_grad():
-        for labeled, unlabeled in zip(enumerate(test_labeled_loader), enumerate(test_unlabeled_loader)):
+        encoder.eval()
+        decoder.eval()
+        discriminator_g.eval()
+        discriminator_c.eval()
 
-            l_batch_idx, (l_inputs, l_labels) = labeled
-            unl_batch_idx, (unl_inputs, _) = unlabeled
+        for batch_idx, (inputs, labels) in enumerate(test_loader):
 
+            batch_pred, batch_latent = encoder(inputs)
+            # total_latent.append(batch_latent.cpu().numpy())
 
-# def build(self):
-#     self.is_build = True
-#     self.x_input = torch.placeholder(dtype=torch.float32, shape=[None, self.input_dim])
-#     self.x_input_l = torch.placeholder(dtype=torch.float32, shape=[None, self.input_dim])
-#     self.y_input = torch.placeholder(dtype=torch.float32, shape=[None, self.n_labels])
-#     self.x_target = torch.placeholder(dtype=torch.float32, shape=[None, self.input_dim])
-#     self.real_distribution = torch.placeholder(dtype=torch.float32, shape=[None, self.z_dim])
-#     self.categorial_distribution = torch.placeholder(dtype=torch.float32, shape=[None, self.n_labels])
-#     self.manual_decoder_input = torch.placeholder(dtype=torch.float32, shape=[1, self.z_dim + self.n_labels])
-#     self.learning_rate = torch.placeholder(torch.float32, shape=[])
-#     self.keep_prob = torch.placeholder(torch.float32, shape=[])
+            batch_label = labels.argmax(dim=1).cpu().numpy()
+            prob = batch_pred.max(dim=1).cpu().numpy()
+            batch_pred = batch_pred.argmax(dim=1).cpu().numpy()
 
-    # Reconstruction Phase
-    self.encoder_output_label, self.encoder_output_latent = self.model.encoder(self.x_input, self.keep_prob)
-    decoder_input = torch.cat((self.encoder_output_label, self.encoder_output_latent), 1)
-    decoder_output = self.model.decoder(decoder_input)
+            y_pred.extend(batch_pred.tolist())
+            y_true.extend(batch_label.tolist())
+            # total_prob.extend(prob.tolist())
 
-    self.autoencoder_loss = F.mse_loss(self.x_target, decoder_output)
-    autoencoder_optimizer = Adam(self.model.parameters(), lr=self.learning_rate, betas=(self.beta1, 0.999))
-    autoencoder_optimizer.zero_grad()
-    self.autoencoder_loss.backward()
-    autoencoder_optimizer.step()
+        y_true = np.array(y_true)
+        y_pred = np.array(y_pred)
+        # total_prob = np.array(total_prob)
+        # total_latent = np.concatenate(total_latent, axis=0)
 
-    # Regularization Phase
-    d_g_real = self.model.discriminator_gauss(self.real_distribution)
-    d_g_fake = self.model.discriminator_gauss(self.encoder_output_latent)
+        evaluate(y_true, y_pred, epoch)
 
-    d_c_real = self.model.discriminator_categorical(self.categorial_distribution)
-    d_c_fake = self.model.discriminator_categorical(self.encoder_output_label)
 
-    self.dc_g_loss = -torch.mean(d_g_real) + torch.mean(d_g_fake) \
-                     + 10.0 * self.gradient_penalty(self.real_distribution, self.encoder_output_latent,
-                                                    self.model.discriminator_gauss)
-
-    self.dc_c_loss = -torch.mean(d_c_real) + torch.mean(d_c_fake) \
-                     + 10.0 * self.gradient_penalty(self.categorial_distribution, self.encoder_output_label,
-                                                    self.model.discriminator_categorical)
-
-    dc_g_optimizer = Adam(self.model.parameters(), lr=self.learning_rate, betas=(self.beta1, self.beta2))
-    dc_c_optimizer = Adam(self.model.parameters(), lr=self.learning_rate, betas=(self.beta1, self.beta2))
-    dc_g_optimizer.zero_grad()
-    dc_c_optimizer.zero_grad()
-    self.dc_g_loss.backward()
-    self.dc_c_loss.backward()
-    dc_g_optimizer.step()
-    dc_c_optimizer.step()
-
-    self.generator_loss = -torch.mean(d_g_fake) - torch.mean(d_c_fake)
-
-    en_var = [var for var in self.model.parameters() if 'e_' in var.name]
-    generator_optimizer = Adam(en_var, lr=self.learning_rate, betas=(self.beta1, self.beta2))
-    generator_optimizer.zero_grad()
-    self.generator_loss.backward()
-    generator_optimizer.step()
-
-    # Semi-Supervised Classification Phase
-    self.encoder_output_label_, self.encoder_output_latent_ = self.model.encoder(self.x_input_l, self.keep_prob,
-                                                                                 supervised=True)
-
-    self.output_label = torch.argmax(self.encoder_output_label_, 1)
-    correct_pred = torch.eq(self.output_label, torch.argmax(self.y_input, 1))
-    self.accuracy = torch.mean(correct_pred.float())
-
-    self.supervised_encoder_loss = F.cross_entropy(self.encoder_output_label_, torch.argmax(self.y_input, 1))
-    supervised_encoder_optimizer = Adam(en_var, lr=self.learning_rate, betas=(self.beta1, self.beta1_sup))
-    supervised_encoder_optimizer.zero_grad()
-    self.supervised_encoder_loss.backward()
-    supervised_encoder_optimizer.step()
-
-
-def get_val_acc(self, val_size, batch_size, tfdata, sess):
-    acc = 0
-    y_true, y_pred = [], []
-    num_batches = int(val_size / batch_size)
-
-    for j in tqdm.tqdm(range(num_batches)):
-        batch_x_l, batch_y_l = data_stream(tfdata, sess)
-        batch_x_l = torch.from_numpy(batch_x_l)
-        batch_y_l = torch.from_numpy(batch_y_l)
-        batch_pred = self.output_label(batch_x_l, batch_y_l, 1.0).argmax(dim=1).cpu().numpy()
-
-        batch_label = np.argmax(batch_y_l, axis=1)
-        y_pred += batch_pred.tolist()
-        y_true += batch_label.tolist()
-
-    avg_acc = np.equal(y_true, y_pred).mean()
-
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
-    fnr = fn / (tp + fn)
-    err = (fn + fp) / (tp + tn + fp + fn)
-    precision = tp / (tp + fp)
-    recall = 1 - fnr
-    f1 = (2 * precision * recall) / (precision + recall)
-
-    return avg_acc, precision, recall, f1
-
-
-def train(self):
-    train_unlabel, train_label, validation = self.construct_data_flow()
-    if not self.is_build:
-        self.build()
-    all_variables = list(self.parameters())
-    init = torch.global_variables_initializer()
-
-    # Tensorboard visualization
-    writer = SummaryWriter(log_dir=tensorboard_path)
-    writer.add_scalar('Autoencoder Loss', self.autoencoder_loss)
-    writer.add_scalar('Discriminator gauss Loss', self.dc_g_loss)
-    writer.add_scalar('Discriminator categorical Loss', self.dc_c_loss)
-    writer.add_scalar('Generator Loss', self.generator_loss)
-    writer.add_scalar('Supervised Encoder Loss', self.supervised_encoder_loss)
-    writer.add_scalar('Supervised Encoder Accuracy', self.accuracy)
-
-    accuracies = []
-    # Saving the model
-    step = 0
-    # Early stopping
-    best_sess = None
-    best_f1 = 0.0
-    stop = False
-    last_improvement = 0
-    require_improvement = 20
-
-    accs = {
-        'known': [],
-        'unknown': []
-    }
-    f1s = {
-        'known': [],
-        'unknown': []
-    }
-
-    tensorboard_path, saved_model_path, log_path = form_results(
-        self.model_name, self.results_path, self.z_dim, self.supervised_lr, self.batch_size, self.n_epochs, self.beta1)
-
-    with torch.Session() as sess:
-        sess.run(init)
-        for epoch in range(self.n_epochs):
-            if epoch == 50:
-                self.supervised_lr /= 10
-                self.reconstruction_lr /= 10
-                self.regularization_lr /= 10
-
-            n_batches = int(self.n_labeled / self.batch_size)
-            num_normal = 0
-            num_attack = 0
-
-            print("------------------Epoch {}/{}------------------".format(epoch, self.n_epochs))
-
-            for b in tqdm.tqdm(range(1, n_batches + 1)):
-                z_real_dist = np.random.randn(self.batch_size, self.z_dim) * 5.
-                real_cat_dist = np.random.randint(low=0, high=2, size=self.batch_size)
-                real_cat_dist = np.eye(self.n_labels)[real_cat_dist]
-
-                batch_x_ul, batch_y_ul = data_stream(train_unlabel, sess)
-                batch_x_l, batch_y_l = data_stream(train_label, sess)
-                batch_x_ul = torch.from_numpy(batch_x_ul)
-                batch_y_ul = torch.from_numpy(batch_y_ul)
-                batch_x_l = torch.from_numpy(batch_x_l)
-                batch_y_l = torch.from_numpy(batch_y_l)
-
-                num_normal += (batch_y_ul.argmax(dim=1) == 0).sum()
-                num_attack += (batch_y_ul.argmax(dim=1) == 1).sum()
-
-                self.autoencoder_optimizer.zero_grad()
-                self.discriminator_g_optimizer.zero_grad()
-                self.discriminator_c_optimizer.zero_grad()
-                self.generator_optimizer.zero_grad()
-                self.supervised_encoder_optimizer.zero_grad()
-
-                self.autoencoder_optimizer.step()
-                self.discriminator_g_optimizer.step()
-                self.discriminator_c_optimizer.step()
-                self.generator_optimizer.step()
-                self.supervised_encoder_optimizer.step()
-
-                if b % 10 == 0:
-                    a_loss, d_g_loss, d_c_loss, g_loss, s_loss, summary = (
-                        self.autoencoder_loss.item(), self.dc_g_loss.item(), self.dc_c_loss.item(),
-                        self.generator_loss.item(), self.supervised_encoder_loss.item(), self.summary_op)
-
-                    writer.add_scalar('Autoencoder Loss', a_loss, global_step=step)
-                    writer.add_scalar('Discriminator gauss Loss', d_g_loss, global_step=step)
-                    writer.add_scalar('Discriminator categorical Loss', d_c_loss, global_step=step)
-                    writer.add_scalar('Generator Loss', g_loss, global_step=step)
-                    writer.add_scalar('Supervised Encoder Loss', s_loss, global_step=step)
-
-                    with open(log_path + '/log.txt', 'a') as log:
-                        log.write("Epoch: {}, iteration: {}\n".format(epoch, b))
-                        log.write("Autoencoder Loss: {}\n".format(a_loss))
-                        log.write("Discriminator Gauss Loss: {}".format(d_g_loss))
-                        log.write("Discriminator Categorical Loss: {}".format(d_c_loss))
-                        log.write("Generator Loss: {}\n".format(g_loss))
-                        log.write("Supervised Loss: {}".format(s_loss))
-
-                    step += 1
-
-            print('Num normal: ', num_normal)
-            print('Num attack: ', num_attack)
-
-            if (epoch + 1) % 2 == 0:
-                print("Runing on validation...----------------")
-                acc_known, precision_known, recall_known, f1_known = (
-                    self.get_val_acc(self.validation_size, self.batch_size, validation, sess))
-
-                print("Accuracy on Known attack: {}".format(acc_known))
-                print("Precision on Known attack: {}".format(precision_known))
-                print("Recall on Known attack: {}".format(recall_known))
-                print("F1 on Known attack: {}".format(f1_known))
-
-                accs['known'].append(acc_known)
-                f1s['known'].append(f1_known)
-
-                if f1_known > best_f1:
-                    best_sess = sess
-                elif (epoch + 1) == self.n_epochs:
-                    sess = best_sess
-
-                if self.unknown_attack is not None:
-                    acc_unknown, precision_unknown, recall_unknown, f1_unknown = (
-                        self.get_val_acc(self.validation_unknown_size, self.batch_size, self.validation_unknown, sess))
-
-                    print("Accuracy on unKnown attack: {}".format(acc_unknown))
-                    print("Precision on unKnown attack: {}".format(precision_unknown))
-                    print("Recall on unKnown attack: {}".format(recall_unknown))
-                    print("F1 on unKnown attack: {}".format(f1_unknown))
-
-                    accs['unknown'].append(acc_unknown)
-                    f1s['unknown'].append(f1_unknown)
-
-                print('Save model')
-                saver.save(sess, save_path=saved_model_path, global_step=step)
-
-            with open(log_path + '/sum_val.txt', 'w') as summary:
-                summary.write(json.dumps(accs))
-                summary.write(json.dumps(f1s))
-
-            with open(log_path + '/sum_val.txt', 'w') as summary:
-                summary.write(json.dumps(accs))
-                summary.write(json.dumps(f1s))
-
-
-def test(self, results_path, unknown_test):
-    if not self.is_build:
-        self.build()
-    init = torch.global_variables_initializer()
-    saver = torch.load(f"{results_path}/Saved_models/model.pth")
-    if unknown_test:
-        data_path = [f"{self.data_dir}/{a}/" for a in [self.unknown_attack, 'Normal']]
-        test_size = 0
-        for f in [f"{p}/datainfo.txt" for p in data_path]:
-            data_read = json.load(open(f))
-            test_size += data_read['test']
-    else:
-        test_size = self.data_info['test']
-        data_path = [f"{self.data_dir}/{a}/" for a in self.labels if a != self.unknown_attack]
-
-    print('Test data: ', data_path)
-    with torch.Session() as sess:
-        saver.load_state_dict(torch.load(f"{results_path}/Saved_models/model.pth"))
-        saver.eval()
-        test = data_from_tfrecord(tf_filepath=[f"{p}test" for p in data_path], batch_size=self.batch_size,
-                                  repeat_time=1, shuffle=False)
-        num_batches = int(test_size / self.batch_size)
-        y_true = np.empty((0), int)
-        y_pred = np.empty((0), int)
-        raw_pred = np.empty((0, self.n_labels), int)
-        total_prob = np.empty((0), float)
-        total_latent = np.empty((0, self.z_dim), float)
-
-        for _ in tqdm.tqdm(range(num_batches)):
-            x_test, y_test = data_stream(test, sess)
-            batch_raw_pred, batch_pred, batch_latent = sess.run(
-                [self.encoder_output_label_, self.output_label, self.encoder_output_latent_],
-                feed_dict={self.x_input_l: x_test, self.keep_prob: 1.0})
-            total_latent = np.append(total_latent, batch_latent, axis=0)
-            batch_label = np.argmax(y_test, axis=1).reshape((self.batch_size))
-            raw_pred = np.append(raw_pred, batch_raw_pred, axis=0)
-            y_pred = np.append(y_pred, batch_pred, axis=0)
-            y_true = np.append(y_true, batch_label, axis=0)
-
-    evaluate(y_true, y_pred)
-    return raw_pred, y_pred, y_true
-
-
-def ensemble_predict(self, model_dir, unknown_test):
-    model_paths = [f for f in os.listdir(model_dir) if not f.startswith('.')]
-    ensemble_pred = []
-    for model_path in model_paths:
-        print(model_path)
-        pred, _, y_true = self.test(model_dir + model_path, unknown_test=unknown_test)
-        ensemble_pred.append(pred)
-    ensemble_pred = np.mean(ensemble_pred, axis=0)
-    ensemble_pred = np.argmax(ensemble_pred, axis=1)
-    evaluate(y_true, ensemble_pred)
-    return ensemble_pred, y_true
-
-
-def timing(self, x, model_path, num_loop=100, use_gpu=False):
-    device = torch.device("cuda" if use_gpu and torch.cuda.is_available() else "cpu")
-    if not self.is_build:
-        self.build()
-    self.to(device)
-    checkpoint = torch.load(os.path.join(model_path, "best_model.pth"), map_location=device)
-    self.load_state_dict(checkpoint['model_state_dict'])
-    self.eval()
-
-    # For warm-up
-    x_tensor = torch.tensor(x, dtype=torch.float32, device=device)
-    y_pred = self.forward_label(x_tensor).cpu().numpy()
-
-    time = []
-    with torch.no_grad():
-        for _ in range(num_loop):
-            start = timeit.default_timer()
-            y_pred = self.forward_label(x_tensor).cpu().numpy()
-            _ = np.array(y_pred)
-            end = timeit.default_timer()
-            time.append(end - start)
-    return time
-
-
+if __name__ == '__main__':
+    train()
+    writer.export_scalars_to_json(Config.save_path + '/scalars.json')
+    writer.close()

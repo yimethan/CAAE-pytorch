@@ -6,64 +6,72 @@ import numpy as np
 from config import Config
 
 
+def fullyConnected(input, output_size):
+    batch_size = input.size(0)  # Get the batch size
+    try:
+        input_features = input.size(1) * input.size(2) * input.size(3)  # Get the number of input features
+    except IndexError:
+        input_features = input.size(1)
+    flattened_input = input.view(batch_size, -1)
+
+    fc_layer = nn.Linear(input_features, output_size)
+    fc_output = fc_layer(flattened_input)
+
+    return fc_output
+
+
 class Encoder(nn.Module):
 
-    def __init__(self, keep_prob=Config.keep_prob, supervised=False):
+    def __init__(self, keep_prob=Config.keep_prob):
 
         super(Encoder, self).__init__()
         self.n_labels = Config.n_labels
         self.z_dim = Config.z_dim
 
         self.keep_prob = keep_prob
-        self.supervised = supervised
 
-        self.conv0 = nn.ReLU(nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3))
+        self.conv0 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3)
+        self.relu0 = nn.ReLU()
         self.pool0 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.conv1 = nn.ReLU(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3))
+        self.relu1 = nn.ReLU()
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.conv2 = nn.ReLU(nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3))
+        self.relu2 = nn.ReLU()
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.conv3 = nn.ReLU(nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3))
+        self.relu3 = nn.ReLU()
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.dropout = nn.dropout(p=self.keep_prob)
+        self.dropout = nn.Dropout(p=self.keep_prob)
 
-    def fullyConnected(self, input, output_size):
-        input_size = input.size()[1:]  # Get input size excluding batch dimension
-        input_size = int(np.prod(input_size))  # Compute total input size
-
-        # Define the weight and bias parameters using PyTorch constructs
-        W = nn.Parameter(nn.init.xavier_normal_(torch.empty(input_size, output_size, requires_grad=True)))
-        b = nn.Parameter(nn.init.xavier_normal_(torch.empty(output_size, requires_grad=True)))
-
-        # Reshape the input tensor to 2D
-        input = input.view(-1, input_size)
-
-        # Perform the linear transformation
-        out = torch.addmm(b, input, W)
-
-        return out
-
-    def forward(self, x):
+    def forward(self, x, supervised=False):
 
         x = x.view(-1, 1, 29, 29)
         x = F.pad(x, (2, 2, 1, 2))
 
         x = self.conv0(x)
+        x = self.relu0(x)
         x = self.pool0(x)
+
         x = self.conv1(x)
+        x = self.relu1(x)
         x = self.pool1(x)
+
         x = self.conv2(x)
+        x = self.relu2(x)
         x = self.pool2(x)
+
         x = self.conv3(x)
+        x = self.relu3(x)
         x = self.pool3(x)
 
         x = self.dropout(x)
 
-        latent = self.fullyConnected(x, self.z_dim)
-        cat_op = self.fullyConnected(x, self.n_labels)
+        latent = fullyConnected(x, self.z_dim)
+        cat_op = fullyConnected(x, self.n_labels)
 
-        if self.supervised:
+        if supervised:
             softmax_label = cat_op
         else:
             softmax_label = F.softmax(cat_op, dim=1)
@@ -76,32 +84,40 @@ class Decoder(nn.Module):
     def __init__(self):
         super(Decoder, self).__init__()
 
-        self.deconv0 = nn.ReLU(nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=3))
-        self.deconv1 = nn.ReLU(nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3))
-        self.deconv2 = nn.ReLU(nn.ConvTranspose2d(in_channels=32, out_channels=32, kernel_size=3))
-        self.deconv3 = nn.ReLU(nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=3))
+        self.deconv0 = nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=1)
+        self.relu0 = nn.ReLU()
+        self.deconv1 = nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=1)
+        self.relu1 = nn.ReLU()
+        self.deconv2 = nn.ConvTranspose2d(in_channels=32, out_channels=32, kernel_size=1)
+        self.relu2 = nn.ReLU()
+        self.deconv3 = nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=1)
 
-    def upsample(self, x, factor=(2, 2)):
-        size = (int(x.shape[2] * factor[0]), int(x.shape[3] * factor[1]))
-        out = F.interpolate(x, size=size, mode='bilinear', align_corners=False)
-        return out
-
-    def crop_and_reshape(self, input_tensor, top, left, height, width):
-        cropped_tensor = input_tensor[:, top:top + height, left:left + width]
-        reshaped_tensor = cropped_tensor.view(-1, height * width)
-        return reshaped_tensor
+    def upsample(self, x, factor=2):
+        x = F.interpolate(x, scale_factor=factor, mode='bilinear', align_corners=False)
+        return x
 
     def forward(self, x):
-        x = self.deconv0(x)
-        x = self.upsample(x)
-        x = self.deconv1(x)
-        x = self.upsample(x)
-        x = self.deconv2(x)
-        x = self.upsample(x)
-        x = self.deconv3(x)
-        x = self.upsample(x)
 
-        x = self.crop_and_reshape(x, 1, 1, 29, 29)
+        x = fullyConnected(x, 2 * 2 * 64)
+        x = x.view(-1, 64, 2, 2)
+
+        x = self.deconv0(x)  # batch * 2 * 2 * 64
+        x = self.relu0(x)
+        x = self.upsample(x)  # batch * 4 * 4 * 64
+
+        x = self.deconv1(x)  # batch * 4 * 4 * 32
+        x = self.relu1(x)
+        x = self.upsample(x)  # batch * 8 * 8 * 32
+
+        x = self.deconv2(x)  # batch * 8 * 8 * 32
+        x = self.relu2(x)
+        x = self.upsample(x)  # batch * 16 * 16 * 32
+
+        x = self.deconv3(x) # batch * 16 * 16 * 1
+        x = self.upsample(x)  # batch * 32 * 32 * 1
+
+        x = x[:, :, 1:30, 1:30]
+        # x = x.view(-1, 29, 29)
 
         return x
 
@@ -115,18 +131,31 @@ class Discriminator(nn.Module):
         self.n_labels = Config.n_labels
         self.tag = tag
 
-        self.ds0 = nn.ReLU(nn.Linear(self.z_dim, 1000))
-        self.ds1 = nn.ReLU(nn.Linear(1000, 1000))
+        self.ds0 = nn.Linear(self.z_dim, 1000)
+        self.relu0 = nn.ReLU()
+        self.ds1 = nn.Linear(1000, 1000)
+        self.relu1 = nn.ReLU()
         self.ds2 = nn.Linear(1000, 1)
         self.sigmoid = nn.Sigmoid()
 
         self.d0 = nn.ReLU(nn.Linear(self.n_labels, 1000))
 
     def discriminator_gauss(self, x):
+        print(x.shape)
+
         x = self.ds0(x)
+        x = self.relu0(x)
+        print(x.shape)
+
         x = self.ds1(x)
+        x = self.relu1(x)
+        print(x.shape)
+
         x = self.ds2(x)
+        print(x.shape)
+
         x = self.sigmoid(x)
+        print(x.shape)
 
         return x
 
