@@ -24,6 +24,7 @@ def gradient_penalty(real_samples, g_samples, discriminator):
     batch_size = real_samples.size(0)
     alpha = torch.rand(batch_size, 1)
     alpha = alpha.expand(batch_size, real_samples.size(1))  # Make alpha the same size as real_samples
+    print(real_samples.shape, g_samples.shape)
     interpolates = alpha * real_samples + ((1 - alpha) * g_samples)
     # a linear combination of real_samples and g_samples using the alpha factor
     # represents the points between real and generated data in the input space
@@ -69,14 +70,14 @@ train_unlabeled_size = train_len - train_labeled_size
 
 test_len = len(dataset) - train_len
 
-unlabeled_batch_size = int(Config.batch_size * (train_labeled_size / train_unlabeled_size))
+# unlabeled_batch_size = int(Config.batch_size * (train_labeled_size / train_unlabeled_size))
 
 train_labeled_data, train_unlabeled_data, test_data = random_split(dataset,
-                                                                [train_labeled_size, train_unlabeled_size, test_len])
+                                                                   [train_labeled_size, train_unlabeled_size, test_len])
 
 train_labeled_loader = DataLoader(train_labeled_data, batch_size=Config.batch_size, shuffle=False)
-train_unlabeled_loader = DataLoader(train_unlabeled_data, batch_size=unlabeled_batch_size, shuffle=False)
-test_loader = DataLoader(test_data, batch_size=unlabeled_batch_size, shuffle=False)
+train_unlabeled_loader = DataLoader(train_unlabeled_data, batch_size=Config.batch_size, shuffle=False)
+test_loader = DataLoader(test_data, batch_size=Config.batch_size, shuffle=False)
 
 
 def evaluate(y_true, y_pred, epoch):
@@ -128,7 +129,7 @@ def train():
 
             z_real_dist = torch.randn(Config.batch_size, Config.z_dim) * 5.
             real_cat_dist = torch.randint(low=0, high=2, size=(Config.batch_size,))
-            real_cat_dist = torch.eye(Config.n_labels)[real_cat_dist]
+            real_cat_dist = torch.eye(Config.n_labels)[real_cat_dist]  # one-hot encoded
 
             encoder_output_label, encoder_output_latent = encoder(x_unlabeled)
             decoder_input = torch.cat((encoder_output_label, encoder_output_latent), dim=1)
@@ -136,13 +137,14 @@ def train():
 
             autoencoder_loss = F.mse_loss(decoder_output, x_unlabeled)
 
-            autoencoder_optimizer.zero_grad()
             autoencoder_loss.backward()
             autoencoder_optimizer.step()
 
             # dis for gaussian
             d_g_real = discriminator_g(z_real_dist)
             d_g_fake = discriminator_g(encoder_output_latent)
+
+            # print('real cat dist', real_cat_dist.shape)  # 32, 2
 
             d_c_real = discriminator_c(real_cat_dist)
             d_c_fake = discriminator_c(encoder_output_label)
@@ -153,14 +155,13 @@ def train():
             fake_penalty = gradient_penalty(real_cat_dist, encoder_output_label, discriminator_c)
             dc_c_loss = -torch.mean(d_c_real) + torch.mean(d_c_fake) + 10.0 * fake_penalty
 
-            discriminator_g_optimizer.zero_grad()
             dc_g_loss.backward()
             discriminator_g_optimizer.step()
 
-            discriminator_c_optimizer.zero_grad()
             dc_c_loss.backward()
             discriminator_c_optimizer.step()
 
+            # generator
             generator_loss = -torch.mean(d_g_fake) - torch.mean(d_c_fake)
 
             generator_loss.backward()
@@ -176,7 +177,6 @@ def train():
 
             supervised_encoder_loss = F.cross_entropy(encoder_output_label_, y_labeled)
 
-            supervised_encoder_optimizer.zero_grad()
             supervised_encoder_loss.backward()
             supervised_encoder_optimizer.step()
 
@@ -233,5 +233,4 @@ def test(epoch):
 
 if __name__ == '__main__':
     train()
-    writer.export_scalars_to_json(Config.save_path + '/scalars.json')
     writer.close()

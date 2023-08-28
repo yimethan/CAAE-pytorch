@@ -138,32 +138,43 @@ class Discriminator(nn.Module):
         self.ds2 = nn.Linear(1000, 1)
         self.sigmoid = nn.Sigmoid()
 
-        self.d0 = nn.ReLU(nn.Linear(self.n_labels, 1000))
+        self.d0 = nn.Linear(self.n_labels, 1000)
 
     def discriminator_gauss(self, x):
-        print(x.shape)
+        # batch 10
 
         x = self.ds0(x)
         x = self.relu0(x)
-        print(x.shape)
+        # batch 1000
 
         x = self.ds1(x)
         x = self.relu1(x)
-        print(x.shape)
+        # batch 1000
 
         x = self.ds2(x)
-        print(x.shape)
+        # batch 1
 
         x = self.sigmoid(x)
-        print(x.shape)
+        # batch 1
 
         return x
 
     def discriminator_categorical(self, x):
+        # batch 2
+
         x = self.d0(x)
+        x = self.relu0(x)
+        # batch 1000
+
         x = self.ds1(x)
+        x = self.relu1(x)
+        # batch 1000
+
         x = self.ds2(x)
+        # batch 1
+
         x = self.sigmoid(x)
+        # batch 1
 
         return x
 
