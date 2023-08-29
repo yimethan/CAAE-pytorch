@@ -122,14 +122,12 @@ class Decoder(nn.Module):
         return x
 
 
-class Discriminator(nn.Module):
-
-    def __init__(self, tag='g'):
-        super(Discriminator, self).__init__()
+class Disgauss(nn.Module):
+    def __init__(self):
+        super(Disgauss, self).__init__()
 
         self.z_dim = Config.z_dim
         self.n_labels = Config.n_labels
-        self.tag = tag
 
         self.ds0 = nn.Linear(self.z_dim, 1000)
         self.relu0 = nn.ReLU()
@@ -138,9 +136,7 @@ class Discriminator(nn.Module):
         self.ds2 = nn.Linear(1000, 1)
         self.sigmoid = nn.Sigmoid()
 
-        self.d0 = nn.Linear(self.n_labels, 1000)
-
-    def discriminator_gauss(self, x):
+    def forward(self, x):
         # batch 10
 
         x = self.ds0(x)
@@ -159,7 +155,24 @@ class Discriminator(nn.Module):
 
         return x
 
-    def discriminator_categorical(self, x):
+
+class Discateg(nn.Module):
+    def __init__(self):
+        super(Discateg, self).__init__()
+
+        self.z_dim = Config.z_dim
+        self.n_labels = Config.n_labels
+
+        self.ds0 = nn.Linear(self.z_dim, 1000)
+        self.relu0 = nn.ReLU()
+        self.ds1 = nn.Linear(1000, 1000)
+        self.relu1 = nn.ReLU()
+        self.ds2 = nn.Linear(1000, 1)
+        self.sigmoid = nn.Sigmoid()
+
+        self.d0 = nn.Linear(self.n_labels, 1000)
+
+    def forward(self, x):
         # batch 2
 
         x = self.d0(x)
@@ -177,10 +190,3 @@ class Discriminator(nn.Module):
         # batch 1
 
         return x
-
-    def forward(self, x):
-        if self.tag == 'g':
-            return self.discriminator_gauss(x)
-
-        else:
-            return self.discriminator_categorical(x)

@@ -24,7 +24,7 @@ def gradient_penalty(real_samples, g_samples, discriminator):
     batch_size = real_samples.size(0)
     alpha = torch.rand(batch_size, 1)
     alpha = alpha.expand(batch_size, real_samples.size(1))  # Make alpha the same size as real_samples
-    print(real_samples.shape, g_samples.shape)
+
     interpolates = alpha * real_samples + ((1 - alpha) * g_samples)
     # a linear combination of real_samples and g_samples using the alpha factor
     # represents the points between real and generated data in the input space
@@ -44,8 +44,8 @@ def gradient_penalty(real_samples, g_samples, discriminator):
 
 encoder = Encoder()
 decoder = Decoder()
-discriminator_g = Discriminator('g')
-discriminator_c = Discriminator('c')
+discriminator_g = Disgauss()
+discriminator_c = Discateg()
 
 autoencoder_optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()),
                              lr=Config.reconstruction_lr, betas=(Config.beta1, Config.beta2))
@@ -140,23 +140,21 @@ def train():
             autoencoder_loss.backward()
             autoencoder_optimizer.step()
 
-            # dis for gaussian
+            # wgan-gp
             d_g_real = discriminator_g(z_real_dist)
             d_g_fake = discriminator_g(encoder_output_latent)
 
-            # print('real cat dist', real_cat_dist.shape)  # 32, 2
+            real_penalty = gradient_penalty(z_real_dist, encoder_output_latent, discriminator_g)
+            dc_g_loss = -torch.mean(d_g_real) + torch.mean(d_g_fake) + 10.0 * real_penalty
+
+            dc_g_loss.backward()
+            discriminator_g_optimizer.step()
 
             d_c_real = discriminator_c(real_cat_dist)
             d_c_fake = discriminator_c(encoder_output_label)
 
-            # wgan-gp
-            real_penalty = gradient_penalty(z_real_dist, encoder_output_latent, discriminator_g)
-            dc_g_loss = -torch.mean(d_g_real) + torch.mean(d_g_fake) + 10.0 * real_penalty
             fake_penalty = gradient_penalty(real_cat_dist, encoder_output_label, discriminator_c)
             dc_c_loss = -torch.mean(d_c_real) + torch.mean(d_c_fake) + 10.0 * fake_penalty
-
-            dc_g_loss.backward()
-            discriminator_g_optimizer.step()
 
             dc_c_loss.backward()
             discriminator_c_optimizer.step()
