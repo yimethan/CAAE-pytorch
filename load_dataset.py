@@ -35,7 +35,10 @@ class GetDataset(Dataset):
         img = Image.open(img).convert('L')
         img = self.transform(img)
 
-        return {'input': img, 'label': self.labels[item]}
+        lb = self.labels[item]
+        lb = torch.tensor(lb)
+
+        return {'input': img, 'label': lb}
 
     def load_from_dir(self):
 
@@ -52,4 +55,5 @@ class GetDataset(Dataset):
                 self.images.append(path_to_filename)
 
                 label = file.split('_')[0]
+                label = int(label)
                 self.labels.append(label)

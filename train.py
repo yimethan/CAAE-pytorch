@@ -12,6 +12,32 @@ from load_dataset import *
 
 writer = SummaryWriter()
 
+torch.autograd.set_detect_anomaly(True)
+
+
+# def collate_fn(batch):
+#
+#     original_length = len(batch)
+#     extend_length = Config.batch_size - original_length
+#     extend_idx = batch[:extend_length]
+#     batch.append(extend_idx)
+#
+#     data_list, label_list = [], []
+#
+#     for sample in batch:
+#         print(sample)
+#         _data = sample['input']
+#         _label = sample['label']
+#
+#         data_list.append(_data)
+#         label_list.append(_label)
+#
+#     # padded_x = torch.nn.utils.rnn.pad_sequence(x, batch_first=True)
+#     # padded_y = torch.nn.utils.rnn.pad_sequence(y, batch_first=True)
+#     # cannot pad list of tensors of zero dimension?
+#
+#     return torch.Tensor(data_list), torch.LongTensor(label_list)
+
 
 def gradient_penalty(real_samples, g_samples, discriminator):
     """
@@ -36,10 +62,10 @@ def gradient_penalty(real_samples, g_samples, discriminator):
                                     grad_outputs=torch.ones(d_interpolates.size()),
                                     create_graph=True, retain_graph=True, only_inputs=True)[0]
 
-    slopes = torch.sqrt(torch.sum(gradients ** 2, dim=1))
-    g_penalty = torch.mean((slopes - 1.) ** 2)
+    # slopes = torch.sqrt(torch.sum(gradients ** 2, dim=1))
+    # g_penalty = torch.mean((slopes - 1.) ** 2)
 
-    return g_penalty
+    return gradients
 
 
 encoder = Encoder()
@@ -75,8 +101,8 @@ test_len = len(dataset) - train_len
 train_labeled_data, train_unlabeled_data, test_data = random_split(dataset,
                                                                    [train_labeled_size, train_unlabeled_size, test_len])
 
-train_labeled_loader = DataLoader(train_labeled_data, batch_size=Config.batch_size, shuffle=False)
-train_unlabeled_loader = DataLoader(train_unlabeled_data, batch_size=Config.batch_size, shuffle=False)
+train_labeled_loader = DataLoader(train_labeled_data, batch_size=Config.batch_size)
+train_unlabeled_loader = DataLoader(train_unlabeled_data, batch_size=Config.batch_size)
 test_loader = DataLoader(test_data, batch_size=Config.batch_size, shuffle=False)
 
 
@@ -144,8 +170,28 @@ def train():
             d_g_real = discriminator_g(z_real_dist)
             d_g_fake = discriminator_g(encoder_output_latent)
 
-            real_penalty = gradient_penalty(z_real_dist, encoder_output_latent, discriminator_g)
+            d_g_fake = d_g_fake.detach()
+
+            # real_penalty = gradient_penalty(z_real_dist, encoder_output_latent.detach(), discriminator_g)
+            real_grad = gradient_penalty(z_real_dist, encoder_output_latent.detach(), discriminator_g)
+            try:
+                slopes = torch.sqrt(torch.sum(torch.square(real_grad), dim=1))
+            except RuntimeError:
+                # RuntimeError: Function 'PowBackward0' returned nan values in its 0th output.
+                # maybe because 'gradients' == 0?
+                slopes = torch.sqrt(torch.sum(real_grad), dim=1)
+
+            try:
+                real_penalty = torch.mean(torch.square(slopes - 1.))
+            except RuntimeError:
+                real_penalty = torch.mean(slopes - 1.)
+
             dc_g_loss = -torch.mean(d_g_real) + torch.mean(d_g_fake) + 10.0 * real_penalty
+
+            # print(d_g_real.shape, d_g_fake.shape)
+            # print(dc_g_loss, real_penalty)
+
+            # print(dc_g_loss)
 
             dc_g_loss.backward()
             discriminator_g_optimizer.step()
@@ -153,14 +199,19 @@ def train():
             d_c_real = discriminator_c(real_cat_dist)
             d_c_fake = discriminator_c(encoder_output_label)
 
-            fake_penalty = gradient_penalty(real_cat_dist, encoder_output_label, discriminator_c)
+            d_c_fake = d_c_fake.detach()
+
+            fake_penalty = gradient_penalty(real_cat_dist, encoder_output_label.detach(), discriminator_c)
             dc_c_loss = -torch.mean(d_c_real) + torch.mean(d_c_fake) + 10.0 * fake_penalty
 
             dc_c_loss.backward()
             discriminator_c_optimizer.step()
 
             # generator
+            d_g_fake = d_g_fake.requires_grad_(True)
+            d_c_fake = d_c_fake.requires_grad_(True)
             generator_loss = -torch.mean(d_g_fake) - torch.mean(d_c_fake)
+            # generator_loss.requires_grad_(True)
 
             generator_loss.backward()
             generator_optimizer.step()
@@ -170,7 +221,7 @@ def train():
 
             # Classification accuracy of encoder
             output_label = torch.argmax(encoder_output_label_, dim=1)
-            correct_pred = output_label.eq(torch.argmax(y_labeled, dim=1))
+            correct_pred = output_label.eq(y_labeled)
             accuracy = torch.mean(correct_pred.float())
 
             supervised_encoder_loss = F.cross_entropy(encoder_output_label_, y_labeled)
@@ -214,7 +265,6 @@ def test(epoch):
             # total_latent.append(batch_latent.cpu().numpy())
 
             batch_label = labels.argmax(dim=1).cpu().numpy()
-            prob = batch_pred.max(dim=1).cpu().numpy()
             batch_pred = batch_pred.argmax(dim=1).cpu().numpy()
 
             y_pred.extend(batch_pred.tolist())
@@ -232,3 +282,5 @@ def test(epoch):
 if __name__ == '__main__':
     train()
     writer.close()
+
+    torch.autograd.set_detect_anomaly(False)
