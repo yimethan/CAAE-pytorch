@@ -14,64 +14,58 @@ writer = SummaryWriter()
 
 torch.autograd.set_detect_anomaly(True)
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# def collate_fn(batch):
-#
-#     original_length = len(batch)
-#     extend_length = Config.batch_size - original_length
-#     extend_idx = batch[:extend_length]
-#     batch.append(extend_idx)
-#
+
+# def collate_fn(batch_dummy):
 #     data_list, label_list = [], []
 #
+#     inputs = [batch['input'] for batch in batch_dummy]
+#     labels = [batch['label'] for batch in batch_dummy]
+#
+#
+#
 #     for sample in batch:
-#         print(sample)
-#         _data = sample['input']
-#         _label = sample['label']
+#         try:
+#             # Your collation logic here
+#             # For example, you can append the sample to the collated_batch
+#             collated_batch.append(sample)
+#         except Exception as e:
+#             print(f"Skipping sample due to error: {e}")
 #
-#         data_list.append(_data)
-#         label_list.append(_label)
-#
-#     # padded_x = torch.nn.utils.rnn.pad_sequence(x, batch_first=True)
-#     # padded_y = torch.nn.utils.rnn.pad_sequence(y, batch_first=True)
-#     # cannot pad list of tensors of zero dimension?
-#
-#     return torch.Tensor(data_list), torch.LongTensor(label_list)
+#     # Return the collated batch without the problematic samples
+#     return collated_batch
 
 
-def gradient_penalty(real_samples, g_samples, discriminator):
-    """
-    calculates the gradient penalty term used in the Wasserstein GAN with Gradient Penalty (WGAN-GP) loss
-    :param real_samples: Real data samples from the dataset
-    :param g_samples: Generated samples produced by the generator
-    :param discriminator: The discriminator network
-    :return: The calculated gradient penalty is returned as the output of the function
-    """
-    batch_size = real_samples.size(0)
-    alpha = torch.rand(batch_size, 1)
-    alpha = alpha.expand(batch_size, real_samples.size(1))  # Make alpha the same size as real_samples
+def gradient_penalty(real_samples, fake_samples, discriminator):
+    # Generate random epsilon for interpolation
+    epsilon = torch.rand(real_samples.size(0), 1)
+    epsilon = epsilon.expand_as(real_samples).to(device)
 
-    interpolates = alpha * real_samples + ((1 - alpha) * g_samples)
-    # a linear combination of real_samples and g_samples using the alpha factor
-    # represents the points between real and generated data in the input space
+    # Interpolate between real and fake samples
+    interpolated = epsilon * real_samples + (1 - epsilon) * fake_samples
+    interpolated.requires_grad_(True).to(device)
 
-    interpolates.requires_grad_(True)  # Enable gradient computation
-    d_interpolates = discriminator(interpolates)
+    # Calculate discriminator scores on the interpolated samples
+    d_interpolated = discriminator(interpolated).to(device)
 
-    gradients = torch.autograd.grad(outputs=d_interpolates, inputs=interpolates,
-                                    grad_outputs=torch.ones(d_interpolates.size()),
+    # Compute gradients of the scores with respect to the interpolated samples
+    gradients = torch.autograd.grad(outputs=d_interpolated, inputs=interpolated,
+                                    grad_outputs=torch.ones(d_interpolated.size()).to(device),
                                     create_graph=True, retain_graph=True, only_inputs=True)[0]
 
-    # slopes = torch.sqrt(torch.sum(gradients ** 2, dim=1))
-    # g_penalty = torch.mean((slopes - 1.) ** 2)
+    # Compute the gradient penalty
+    gradients = gradients.view(gradients.size(0), -1)
+    g_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()  # Penalty term
 
-    return gradients
+    return g_penalty
 
 
-encoder = Encoder()
-decoder = Decoder()
-discriminator_g = Disgauss()
-discriminator_c = Discateg()
+
+encoder = Encoder().to(device)
+decoder = Decoder().to(device)
+discriminator_g = Disgauss().to(device)
+discriminator_c = Discateg().to(device)
 
 autoencoder_optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()),
                              lr=Config.reconstruction_lr, betas=(Config.beta1, Config.beta2))
@@ -116,8 +110,8 @@ def evaluate(y_true, y_pred, epoch):
 
     print('---Test results-------')
 
-    print(tp, fn)
-    print(fp, tn)
+    print('TP:', tp, 'FN:', fn)
+    print('FP:', fp, 'TN:', tn)
     print('False negative rate: ', fnr)
     print('Error rate: ', err)
     print('Precision: ', precision)
@@ -150,58 +144,46 @@ def train():
             generator_optimizer.zero_grad()
             supervised_encoder_optimizer.zero_grad()
 
-            x_labeled, y_labeled = labeled['input'], labeled['label']
-            x_unlabeled, y_unlabeled = unlabeled['input'], unlabeled['label']
+            x_labeled, y_labeled = labeled['input'].to(device), labeled['label'].to(device)
+            x_unlabeled, y_unlabeled = unlabeled['input'].to(device), unlabeled['label'].to(device)
 
             z_real_dist = torch.randn(Config.batch_size, Config.z_dim) * 5.
             real_cat_dist = torch.randint(low=0, high=2, size=(Config.batch_size,))
             real_cat_dist = torch.eye(Config.n_labels)[real_cat_dist]  # one-hot encoded
 
+            z_real_dist = z_real_dist.to(device)
+            real_cat_dist = real_cat_dist.to(device)
+
             encoder_output_label, encoder_output_latent = encoder(x_unlabeled)
             decoder_input = torch.cat((encoder_output_label, encoder_output_latent), dim=1)
-            decoder_output = decoder(decoder_input)
+            decoder_output = decoder(decoder_input).to(device)
 
             autoencoder_loss = F.mse_loss(decoder_output, x_unlabeled)
 
             autoencoder_loss.backward()
             autoencoder_optimizer.step()
 
+            encoder_output_label = encoder_output_label.to(device)
+            encoder_output_latent = encoder_output_latent.to(device)
+
             # wgan-gp
-            d_g_real = discriminator_g(z_real_dist)
-            d_g_fake = discriminator_g(encoder_output_latent)
+            d_g_real = discriminator_g(z_real_dist).to(device)
+            d_g_fake = discriminator_g(encoder_output_latent).to(device)
 
             d_g_fake = d_g_fake.detach()
 
-            # real_penalty = gradient_penalty(z_real_dist, encoder_output_latent.detach(), discriminator_g)
-            real_grad = gradient_penalty(z_real_dist, encoder_output_latent.detach(), discriminator_g)
-            try:
-                slopes = torch.sqrt(torch.sum(torch.square(real_grad), dim=1))
-            except RuntimeError:
-                # RuntimeError: Function 'PowBackward0' returned nan values in its 0th output.
-                # maybe because 'gradients' == 0?
-                slopes = torch.sqrt(torch.sum(real_grad), dim=1)
-
-            try:
-                real_penalty = torch.mean(torch.square(slopes - 1.))
-            except RuntimeError:
-                real_penalty = torch.mean(slopes - 1.)
-
+            real_penalty = gradient_penalty(z_real_dist, encoder_output_latent.detach(), discriminator_g).to(device)
             dc_g_loss = -torch.mean(d_g_real) + torch.mean(d_g_fake) + 10.0 * real_penalty
-
-            # print(d_g_real.shape, d_g_fake.shape)
-            # print(dc_g_loss, real_penalty)
-
-            # print(dc_g_loss)
 
             dc_g_loss.backward()
             discriminator_g_optimizer.step()
 
-            d_c_real = discriminator_c(real_cat_dist)
-            d_c_fake = discriminator_c(encoder_output_label)
+            d_c_real = discriminator_c(real_cat_dist).to(device)
+            d_c_fake = discriminator_c(encoder_output_label).to(device)
 
             d_c_fake = d_c_fake.detach()
 
-            fake_penalty = gradient_penalty(real_cat_dist, encoder_output_label.detach(), discriminator_c)
+            fake_penalty = gradient_penalty(real_cat_dist, encoder_output_label.detach(), discriminator_c).to(device)
             dc_c_loss = -torch.mean(d_c_real) + torch.mean(d_c_fake) + 10.0 * fake_penalty
 
             dc_c_loss.backward()
@@ -259,13 +241,18 @@ def test(epoch):
         discriminator_g.eval()
         discriminator_c.eval()
 
-        for batch_idx, (inputs, labels) in enumerate(test_loader):
+        for batch_idx, inputs in enumerate(test_loader):
 
-            batch_pred, batch_latent = encoder(inputs)
+            x = inputs['input'].to(device)
+            y = inputs['label'].to(device)
+
+            batch_pred, batch_latent = encoder(x)
             # total_latent.append(batch_latent.cpu().numpy())
 
-            batch_label = labels.argmax(dim=1).cpu().numpy()
+            batch_label = y.cpu().numpy()
             batch_pred = batch_pred.argmax(dim=1).cpu().numpy()
+
+            print(batch_pred)
 
             y_pred.extend(batch_pred.tolist())
             y_true.extend(batch_label.tolist())

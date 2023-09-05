@@ -7,6 +7,7 @@ import numpy as np
 
 from config import Config
 
+
 class GetDataset(Dataset):
 
     def __init__(self, labeled=True):

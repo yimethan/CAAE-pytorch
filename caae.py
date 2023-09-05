@@ -5,6 +5,8 @@ import numpy as np
 
 from config import Config
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 def fullyConnected(input, output_size):
     batch_size = input.size(0)  # Get the batch size
@@ -14,7 +16,7 @@ def fullyConnected(input, output_size):
         input_features = input.size(1)
     flattened_input = input.view(batch_size, -1)
 
-    fc_layer = nn.Linear(input_features, output_size)
+    fc_layer = nn.Linear(input_features, output_size).to(device)
     fc_output = fc_layer(flattened_input)
 
     return fc_output
