@@ -17,26 +17,6 @@ torch.autograd.set_detect_anomaly(True)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-# def collate_fn(batch_dummy):
-#     data_list, label_list = [], []
-#
-#     inputs = [batch['input'] for batch in batch_dummy]
-#     labels = [batch['label'] for batch in batch_dummy]
-#
-#
-#
-#     for sample in batch:
-#         try:
-#             # Your collation logic here
-#             # For example, you can append the sample to the collated_batch
-#             collated_batch.append(sample)
-#         except Exception as e:
-#             print(f"Skipping sample due to error: {e}")
-#
-#     # Return the collated batch without the problematic samples
-#     return collated_batch
-
-
 def gradient_penalty(real_samples, fake_samples, discriminator):
     # Generate random epsilon for interpolation
     epsilon = torch.rand(real_samples.size(0), 1)
@@ -59,7 +39,6 @@ def gradient_penalty(real_samples, fake_samples, discriminator):
     g_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()  # Penalty term
 
     return g_penalty
-
 
 
 encoder = Encoder().to(device)
@@ -248,6 +227,16 @@ def test(epoch):
 
             batch_pred, batch_latent = encoder(x)
             # total_latent.append(batch_latent.cpu().numpy())
+
+            # TODO: every sample in a batch has same values
+            # batch_pred value of every sample in a batch is the same
+            # 1. batch_pred looks like [[a, b], [a, b], [a, b], ..., [a, b]]
+            # 2. result of 'batch_pred = batch_pred.argmax(dim=1).cpu().numpy()' looks like
+            # [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+            # [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+            # [1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]
+            # [1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]
+            # [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
 
             batch_label = y.cpu().numpy()
             batch_pred = batch_pred.argmax(dim=1).cpu().numpy()
