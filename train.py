@@ -241,7 +241,7 @@ def test(epoch):
             batch_label = y.cpu().numpy()
             batch_pred = batch_pred.argmax(dim=1).cpu().numpy()
 
-            print(batch_pred)
+            # print(batch_pred)
 
             y_pred.extend(batch_pred.tolist())
             y_true.extend(batch_label.tolist())

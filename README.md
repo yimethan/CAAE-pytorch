@@ -1,0 +1,2 @@
++ Pytorch implementation of [Detecting in-vehicle intrusion via semi-supervised learning-based convolutional adversarial autoencoders](https://www.sciencedirect.com/science/article/pii/S2214209622000675)
++ still working on it
