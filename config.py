@@ -11,7 +11,7 @@ class Config:
     z_dim = 10
     n_labels = 2
 
-    keep_prob = 0.75
+    keep_prob = 0.15
 
     beta1 = 0.5
     beta2 = 0.9

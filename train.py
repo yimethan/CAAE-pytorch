@@ -172,7 +172,6 @@ def train():
             d_g_fake = d_g_fake.requires_grad_(True)
             d_c_fake = d_c_fake.requires_grad_(True)
             generator_loss = -torch.mean(d_g_fake) - torch.mean(d_c_fake)
-            # generator_loss.requires_grad_(True)
 
             generator_loss.backward()
             generator_optimizer.step()

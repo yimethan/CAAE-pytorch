@@ -86,13 +86,13 @@ class Decoder(nn.Module):
     def __init__(self):
         super(Decoder, self).__init__()
 
-        self.deconv0 = nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=1)
+        self.deconv0 = nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=3)
         self.relu0 = nn.ReLU()
-        self.deconv1 = nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=1)
+        self.deconv1 = nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3)
         self.relu1 = nn.ReLU()
-        self.deconv2 = nn.ConvTranspose2d(in_channels=32, out_channels=32, kernel_size=1)
+        self.deconv2 = nn.ConvTranspose2d(in_channels=32, out_channels=32, kernel_size=3)
         self.relu2 = nn.ReLU()
-        self.deconv3 = nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=1)
+        self.deconv3 = nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=3)
 
     def upsample(self, x, factor=2):
         x = F.interpolate(x, scale_factor=factor, mode='bilinear', align_corners=False)
@@ -101,7 +101,8 @@ class Decoder(nn.Module):
     def forward(self, x):
 
         x = fullyConnected(x, 2 * 2 * 64)
-        x = x.view(-1, 64, 2, 2)
+        x = x.view(-1, 2, 2, 64)
+        x = x.permute(0, 3, 1, 2)
 
         x = self.deconv0(x)  # batch * 2 * 2 * 64
         x = self.relu0(x)
