@@ -56,10 +56,10 @@ generator_optimizer = Adam(encoder.parameters(), lr=Config.regularization_lr, be
 supervised_encoder_optimizer = Adam(encoder.parameters(), lr=Config.supervised_lr,
                                     betas=(Config.beta1_sup, Config.beta2))
 
-reconstruction_scheduler = lr_scheduler.StepLR(autoencoder_optimizer, step_size=50, gamma=0.9)
-supervised_scheduler = lr_scheduler.StepLR(supervised_encoder_optimizer, step_size=50, gamma=0.9)
-disc_g_scheduler = lr_scheduler.StepLR(discriminator_g_optimizer, step_size=50, gamma=0.9)
-disc_c_scheduler = lr_scheduler.StepLR(discriminator_c_optimizer, step_size=50, gamma=0.9)
+reconstruction_scheduler = lr_scheduler.StepLR(autoencoder_optimizer, step_size=50, gamma=Config.gamma)
+supervised_scheduler = lr_scheduler.StepLR(supervised_encoder_optimizer, step_size=50, gamma=Config.gamma)
+disc_g_scheduler = lr_scheduler.StepLR(discriminator_g_optimizer, step_size=50, gamma=Config.gamma)
+disc_c_scheduler = lr_scheduler.StepLR(discriminator_c_optimizer, step_size=50, gamma=Config.gamma)
 
 dataset = GetDataset()
 
@@ -213,12 +213,13 @@ def test(epoch):
     # total_prob = []
     # total_latent = []
 
-    with torch.no_grad():
-        encoder.eval()
-        decoder.eval()
-        discriminator_g.eval()
-        discriminator_c.eval()
+    # with torch.no_grad():
+    encoder.eval()
+    decoder.eval()
+    discriminator_g.eval()
+    discriminator_c.eval()
 
+    with torch.no_grad():
         for batch_idx, inputs in enumerate(test_loader):
 
             x = inputs['input'].to(device)
@@ -228,19 +229,13 @@ def test(epoch):
             # total_latent.append(batch_latent.cpu().numpy())
 
             # TODO: every sample in a batch has same values
-            # batch_pred value of every sample in a batch is the same
-            # 1. batch_pred looks like [[a, b], [a, b], [a, b], ..., [a, b]]
-            # 2. result of 'batch_pred = batch_pred.argmax(dim=1).cpu().numpy()' looks like
-            # [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
-            # [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
-            # [1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]
-            # [1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]
-            # [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+
+            # print(batch_pred)
 
             batch_label = y.cpu().numpy()
             batch_pred = batch_pred.argmax(dim=1).cpu().numpy()
 
-            # print(batch_pred)
+            print('batch_pred', batch_pred)
 
             y_pred.extend(batch_pred.tolist())
             y_true.extend(batch_label.tolist())
