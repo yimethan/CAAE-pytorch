@@ -32,29 +32,27 @@ class Encoder(nn.Module):
 
         self.keep_prob = keep_prob
 
-        self.conv0 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3)
+        self.conv0 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1)
         self.relu0 = nn.ReLU()
         self.pool0 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv1 = nn.ReLU(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3))
+        self.conv1 = nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3, padding=1)
         self.relu1 = nn.ReLU()
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv2 = nn.ReLU(nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3))
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
         self.relu2 = nn.ReLU()
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv3 = nn.ReLU(nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3))
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, padding=1)
         self.relu3 = nn.ReLU()
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         self.dropout = nn.Dropout(p=self.keep_prob)
 
     def forward(self, x, supervised=False):
+        x = F.pad(x, (1, 2, 1, 2))  # batch * 1 * 32 * 32
 
-        x = x.view(-1, 1, 29, 29)
-        x = F.pad(x, (2, 2, 1, 2))
-
-        x = self.conv0(x)
+        x = self.conv0(x)  # batch * 32 * 32 * 32
         x = self.relu0(x)
-        x = self.pool0(x)
+        x = self.pool0(x)  # batch * 32 * 16 * 16
 
         x = self.conv1(x)
         x = self.relu1(x)
@@ -86,13 +84,13 @@ class Decoder(nn.Module):
     def __init__(self):
         super(Decoder, self).__init__()
 
-        self.deconv0 = nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=3)
+        self.deconv0 = nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=3, padding=1)
         self.relu0 = nn.ReLU()
-        self.deconv1 = nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3)
+        self.deconv1 = nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3, padding=1)
         self.relu1 = nn.ReLU()
-        self.deconv2 = nn.ConvTranspose2d(in_channels=32, out_channels=32, kernel_size=3)
+        self.deconv2 = nn.ConvTranspose2d(in_channels=32, out_channels=32, kernel_size=3, padding=1)
         self.relu2 = nn.ReLU()
-        self.deconv3 = nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=3)
+        self.deconv3 = nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=3, padding=1)
 
     def upsample(self, x, factor=2):
         x = F.interpolate(x, scale_factor=factor, mode='bilinear', align_corners=False)
@@ -101,12 +99,11 @@ class Decoder(nn.Module):
     def forward(self, x):
 
         x = fullyConnected(x, 2 * 2 * 64)
-        x = x.view(-1, 2, 2, 64)
-        x = x.permute(0, 3, 1, 2)
+        # x = x.view(-1, 64, 2, 2)
 
-        x = self.deconv0(x)  # batch * 2 * 2 * 64
+        x = self.deconv0(x)  # batch * 64 * 2 * 2
         x = self.relu0(x)
-        x = self.upsample(x)  # batch * 4 * 4 * 64
+        x = self.upsample(x)  # batch * 64 * 4 * 4
 
         x = self.deconv1(x)  # batch * 4 * 4 * 32
         x = self.relu1(x)
@@ -116,7 +113,7 @@ class Decoder(nn.Module):
         x = self.relu2(x)
         x = self.upsample(x)  # batch * 16 * 16 * 32
 
-        x = self.deconv3(x) # batch * 16 * 16 * 1
+        x = self.deconv3(x)  # batch * 16 * 16 * 1
         x = self.upsample(x)  # batch * 32 * 32 * 1
 
         x = x[:, :, 1:30, 1:30]

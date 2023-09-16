@@ -1,7 +1,7 @@
 class Config:
 
     epochs = 100
-    batch_size = 32
+    batch_size = 64
 
     input_dim = 29 * 29
 
@@ -17,11 +17,13 @@ class Config:
     beta2 = 0.9
     beta1_sup = 0.9
 
-    supervised_lr = 0.0001
-    reconstruction_lr = 0.0001
-    regularization_lr = 0.0001
+    supervised_lr = 1e-2
+    reconstruction_lr = 1e-2
+    regularization_lr = 1e-2
+
+    gamma = 0.1
 
     data_root = '../dataset/CHD/id_image_29/'
     save_path = '.'
 
-    labeled_percentage = 0.1
+    labeled_percentage = 0.4
