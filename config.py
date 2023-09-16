@@ -11,15 +11,15 @@ class Config:
     z_dim = 10
     n_labels = 2
 
-    keep_prob = 0.75
+    keep_prob = 0.15
 
     beta1 = 0.5
     beta2 = 0.9
     beta1_sup = 0.9
 
-    supervised_lr = 1e-4
-    reconstruction_lr = 1e-3
-    regularization_lr = 1e-3
+    supervised_lr = 1e-2
+    reconstruction_lr = 1e-2
+    regularization_lr = 1e-2
 
     gamma = 0.1
 

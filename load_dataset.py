@@ -24,10 +24,6 @@ class GetDataset(Dataset):
 
         self.load_from_dir()
 
-        self.transform = transforms.Compose([
-            transforms.ToTensor()
-        ])
-
     def __len__(self):
         return len(self.images)
 
@@ -35,7 +31,8 @@ class GetDataset(Dataset):
 
         img = self.images[item]
         img = Image.open(img).convert('L')
-        img = self.transform(img)
+        img = np.array(img)
+        img = torch.from_numpy(img)
 
         lb = self.labels[item]
         lb = torch.tensor(lb)

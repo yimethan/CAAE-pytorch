@@ -156,9 +156,6 @@ def train():
             for _ in range(5):
                 encoder_output_label, encoder_output_latent = encoder(x_unlabeled)
 
-                encoder_output_label = encoder_output_label.to(device)
-                encoder_output_latent = encoder_output_latent.to(device)
-
                 d_g_real = discriminator_g(z_real_dist)
                 d_g_fake = discriminator_g(encoder_output_latent)
 
@@ -186,11 +183,15 @@ def train():
             # generator
             # d_g_fake = d_g_fake.requires_grad_(True)
             # d_c_fake = d_c_fake.requires_grad_(True)
-            encoder_output_label, encoder_output_latent = encoder(x_unlabeled)
-            d_g_fake = discriminator_g(encoder_output_latent).to(device)
-            d_c_fake = discriminator_c(encoder_output_label).to(device)
+            _encoder_output_label, _encoder_output_latent = encoder(x_unlabeled)
+            d_g_fake = discriminator_g(_encoder_output_latent).to(device)
+            d_c_fake = discriminator_c(_encoder_output_label).to(device)
 
-            generator_loss = -torch.mean(d_g_fake) - torch.mean(d_c_fake)
+            generator_g_loss = -torch.mean(torch.log(d_g_fake + 1e-8))
+            generator_c_loss = -torch.mean(torch.log(d_c_fake + 1e-8))
+
+            # generator_loss = -torch.mean(d_g_fake) - torch.mean(d_c_fake)
+            generator_loss = generator_g_loss + generator_c_loss
 
             generator_loss.backward()
             generator_optimizer.step()

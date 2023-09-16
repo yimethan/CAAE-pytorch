@@ -99,7 +99,7 @@ class Decoder(nn.Module):
     def forward(self, x):
 
         x = fullyConnected(x, 2 * 2 * 64)
-        x = x.view(-1, 64, 2, 2)
+        # x = x.view(-1, 64, 2, 2)
 
         x = self.deconv0(x)  # batch * 64 * 2 * 2
         x = self.relu0(x)
