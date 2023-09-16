@@ -11,7 +11,7 @@ class Config:
     z_dim = 10
     n_labels = 2
 
-    keep_prob = 0.15
+    keep_prob = 0.75
 
     beta1 = 0.5
     beta2 = 0.9
@@ -26,4 +26,4 @@ class Config:
     data_root = '../dataset/CHD/id_image_29/'
     save_path = '.'
 
-    labeled_percentage = 0.1
+    labeled_percentage = 0.4
