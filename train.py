@@ -96,13 +96,13 @@ train_unlabeled_size = train_len - train_labeled_size
 
 test_len = len(dataset) - train_len
 
-# unlabeled_batch_size = int(Config.batch_size * (train_labeled_size / train_unlabeled_size))
+unlabeled_batch_size = int(Config.batch_size * (train_labeled_size / train_unlabeled_size))
 
-# train_labeled_data, train_unlabeled_data, test_data = random_split(dataset,
-#                                                                    [train_labeled_size, train_unlabeled_size, test_len])
+train_labeled_data, train_unlabeled_data, test_data = random_split(dataset,
+                                                                   [train_labeled_size, train_unlabeled_size, test_len])
 
-train_data, test_data = train_test_split(dataset, test_size=0.3, random_state=42, shuffle=False)
-train_labeled_data, train_unlabeled_data = train_test_split(train_data, test_size=0.9, shuffle=False)
+# train_data, test_data = train_test_split(dataset, test_size=0.3, random_state=42, shuffle=False)
+# train_labeled_data, train_unlabeled_data = train_test_split(train_data, test_size=0.9, shuffle=False)
 
 train_labeled_loader = DataLoader(train_labeled_data, batch_size=Config.batch_size)
 train_unlabeled_loader = DataLoader(train_unlabeled_data, batch_size=Config.batch_size)
@@ -137,7 +137,7 @@ def train():
             x_unlabeled, y_unlabeled = unlabeled['input'].to(device), unlabeled['label'].to(device)
 
             z_real_dist = torch.randn(Config.batch_size, Config.z_dim) * 5.
-            real_cat_dist = torch.randint(low=0, high=2, size=(Config.batch_size,))
+            real_cat_dist = torch.randint(low=0, high=Config.n_labels, size=(Config.batch_size,))
             real_cat_dist = torch.eye(Config.n_labels)[real_cat_dist]  # one-hot encoded
 
             z_real_dist = z_real_dist.to(device)
@@ -217,6 +217,7 @@ def train():
 
         writer.add_scalar('train/encoder_accuracy', accuracy, epoch)
 
+        writer.add_image('train/x_unlabeled', x_unlabeled[0], epoch)
         writer.add_image('train/decoder_output', decoder_output[0], epoch)
 
         reconstruction_scheduler.step()
@@ -234,7 +235,6 @@ def test(epoch):
     # total_prob = []
     # total_latent = []
 
-    # with torch.no_grad():
     encoder.eval()
     decoder.eval()
     discriminator_g.eval()
@@ -250,8 +250,6 @@ def test(epoch):
             # total_latent.append(batch_latent.cpu().numpy())
 
             # TODO: every sample in a batch has same values
-
-            # print(batch_pred)
 
             batch_label = y.cpu().numpy()
             batch_pred = batch_pred.argmax(dim=1).cpu().numpy()

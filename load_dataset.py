@@ -8,7 +8,6 @@ import numpy as np
 from config import Config
 
 
-
 class GetDataset(Dataset):
 
     def __init__(self, labeled=True):
@@ -31,8 +30,7 @@ class GetDataset(Dataset):
 
         img = self.images[item]
         img = Image.open(img).convert('L')
-        img = np.array(img)
-        img = torch.from_numpy(img)
+        img = transforms.ToTensor()(img)
 
         lb = self.labels[item]
         lb = torch.tensor(lb)
