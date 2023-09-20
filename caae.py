@@ -97,6 +97,8 @@ class Decoder(nn.Module):
         self.relu3 = nn.ReLU()
         self.up3 = self.upsample
 
+        self.shape_check = nn.Dropout(p=0)
+
     def upsample(self, x, factor=2):
         x = F.interpolate(x, scale_factor=factor, mode='bilinear', align_corners=False)
         return x
@@ -122,6 +124,8 @@ class Decoder(nn.Module):
         x = self.relu3(x)
         x = self.up3(x)  # batch * 32 * 32 * 1
 
+        x = self.shape_check(x)
+
         x = x[:, :, 1:30, 1:30]
 
         return x
@@ -132,7 +136,6 @@ class Disgauss(nn.Module):
         super(Disgauss, self).__init__()
 
         self.z_dim = Config.z_dim
-        self.n_labels = Config.n_labels
 
         self.ds0 = nn.Linear(self.z_dim, 1000)
         self.relu0 = nn.ReLU()
@@ -143,7 +146,7 @@ class Disgauss(nn.Module):
 
     def forward(self, x):
         # batch 10
-
+        #
         x = self.ds0(x)
         x = self.relu0(x)
         # batch 1000
@@ -172,6 +175,12 @@ class Discateg(nn.Module):
         self.ds1 = nn.Linear(1000, 1000)
         self.relu1 = nn.ReLU()
         self.ds2 = nn.Linear(1000, 1)
+
+        # self.fc1 = nn.Linear(self.n_labels, 512)
+        # self.lere1 = nn.LeakyReLU(0.2, inplace=True)
+        # self.fc2 = nn.Linear(512, 256)
+        # self.lere2 = nn.LeakyReLU(0.2, inplace=True)
+        # self.fc3 = nn.Linear(256, 1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -190,5 +199,13 @@ class Discateg(nn.Module):
 
         x = self.sigmoid(x)
         # batch 1
+
+        # vanilla gan
+        # x = self.fc1(x)
+        # x = self.lere1(x)
+        # x = self.fc2(x)
+        # x = self.lere2(x)
+        # x = self.fc3(x)
+        # x = self.sigmoid(x)
 
         return x

@@ -18,6 +18,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 writer = SummaryWriter()
 
+
 def gradient_penalty(real_samples, fake_samples, discriminator):
     # Generate random epsilon for interpolation
     epsilon = torch.rand(real_samples.size(0), 1)
@@ -82,11 +83,11 @@ generator_optimizer = Adam(encoder.parameters(), lr=Config.regularization_lr, be
 supervised_encoder_optimizer = Adam(encoder.parameters(), lr=Config.supervised_lr,
                                     betas=(Config.beta1_sup, Config.beta2))
 
-reconstruction_scheduler = lr_scheduler.StepLR(autoencoder_optimizer, step_size=50, gamma=Config.gamma)
-supervised_scheduler = lr_scheduler.StepLR(supervised_encoder_optimizer, step_size=50, gamma=Config.gamma)
-disc_g_scheduler = lr_scheduler.StepLR(discriminator_g_optimizer, step_size=50, gamma=Config.gamma)
-disc_c_scheduler = lr_scheduler.StepLR(discriminator_c_optimizer, step_size=50, gamma=Config.gamma)
-generator_scheduler = lr_scheduler.StepLR(generator_optimizer, step_size=50, gamma=0.9)
+reconstruction_scheduler = lr_scheduler.StepLR(autoencoder_optimizer, step_size=Config.step_size, gamma=Config.gamma)
+supervised_scheduler = lr_scheduler.StepLR(supervised_encoder_optimizer, step_size=Config.step_size, gamma=Config.gamma)
+disc_g_scheduler = lr_scheduler.StepLR(discriminator_g_optimizer, step_size=Config.step_size, gamma=Config.gamma)
+disc_c_scheduler = lr_scheduler.StepLR(discriminator_c_optimizer, step_size=Config.step_size, gamma=Config.gamma)
+generator_scheduler = lr_scheduler.StepLR(generator_optimizer, step_size=Config.step_size, gamma=0.9)
 
 dataset = GetDataset()
 
@@ -113,6 +114,8 @@ torchsummary.summary(decoder, (12,))
 torchsummary.summary(discriminator_g, (10,))
 torchsummary.summary(discriminator_c, (2,))
 
+criterion = nn.CrossEntropyLoss()
+
 
 def train():
     for epoch in range(Config.epochs):
@@ -128,8 +131,6 @@ def train():
             unlabeled = next(iter(train_unlabeled_loader))
 
             autoencoder_optimizer.zero_grad()
-            discriminator_g_optimizer.zero_grad()
-            discriminator_c_optimizer.zero_grad()
             generator_optimizer.zero_grad()
             supervised_encoder_optimizer.zero_grad()
 
@@ -181,8 +182,6 @@ def train():
                 discriminator_c_optimizer.step()
 
             # generator
-            # d_g_fake = d_g_fake.requires_grad_(True)
-            # d_c_fake = d_c_fake.requires_grad_(True)
             _encoder_output_label, _encoder_output_latent = encoder(x_unlabeled)
             d_g_fake = discriminator_g(_encoder_output_latent).to(device)
             d_c_fake = discriminator_c(_encoder_output_label).to(device)
@@ -254,7 +253,7 @@ def test(epoch):
             batch_label = y.cpu().numpy()
             batch_pred = batch_pred.argmax(dim=1).cpu().numpy()
 
-            print('batch_pred', batch_pred)
+            # print('batch_pred', batch_pred)
 
             y_pred.extend(batch_pred.tolist())
             y_true.extend(batch_label.tolist())
