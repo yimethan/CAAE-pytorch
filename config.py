@@ -1,6 +1,6 @@
 class Config:
 
-    epochs = 40
+    epochs = 100
     batch_size = 64
 
     input_dim = 29 * 29

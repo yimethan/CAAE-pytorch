@@ -114,7 +114,7 @@ torchsummary.summary(decoder, (12,))
 torchsummary.summary(discriminator_g, (10,))
 torchsummary.summary(discriminator_c, (2,))
 
-criterion = nn.CrossEntropyLoss()
+criterion = nn.BCEWithLogitsLoss()
 
 
 def train():
@@ -153,31 +153,63 @@ def train():
             autoencoder_loss.backward()
             autoencoder_optimizer.step()
 
-            # wgan-gp
+            # # wgan-gp
+            # for _ in range(5):
+            #     encoder_output_label, encoder_output_latent = encoder(x_unlabeled)
+            #
+            #     d_g_real = discriminator_g(z_real_dist)
+            #     d_g_fake = discriminator_g(encoder_output_latent)
+            #
+            #     real_penalty = gradient_penalty(z_real_dist, encoder_output_latent, discriminator_g).to(device)
+            #     dc_g_loss = -torch.mean(d_g_real) + torch.mean(d_g_fake) + 10.0 * real_penalty
+            #
+            #     discriminator_g_optimizer.zero_grad()
+            #
+            #     dc_g_loss.backward()
+            #     discriminator_g_optimizer.step()
+            #
+            #     encoder_output_label, encoder_output_latent = encoder(x_unlabeled)
+            #
+            #     d_c_real = discriminator_c(real_cat_dist)
+            #     d_c_fake = discriminator_c(encoder_output_label)
+            #
+            #     fake_penalty = gradient_penalty(real_cat_dist, encoder_output_label, discriminator_c).to(device)
+            #     dc_c_loss = -torch.mean(d_c_real) + torch.mean(d_c_fake) + 10.0 * fake_penalty
+            #
+            #     discriminator_c_optimizer.zero_grad()
+            #
+            #     dc_c_loss.backward()
+            #     discriminator_c_optimizer.step()
+
             for _ in range(5):
                 encoder_output_label, encoder_output_latent = encoder(x_unlabeled)
 
                 d_g_real = discriminator_g(z_real_dist)
                 d_g_fake = discriminator_g(encoder_output_latent)
 
-                real_penalty = gradient_penalty(z_real_dist, encoder_output_latent, discriminator_g).to(device)
-                dc_g_loss = -torch.mean(d_g_real) + torch.mean(d_g_fake) + 10.0 * real_penalty
+                target_real = torch.ones_like(d_g_real)
+                target_fake = torch.zeros_like(d_g_fake)
+
+                dc_g_real_loss = torch.mean(criterion(d_g_real, target_real))
+                dc_g_fake_loss = torch.mean(criterion(d_g_fake, target_fake))
+
+                dc_g_loss = dc_g_real_loss + dc_g_fake_loss
 
                 discriminator_g_optimizer.zero_grad()
-
                 dc_g_loss.backward()
                 discriminator_g_optimizer.step()
 
                 encoder_output_label, encoder_output_latent = encoder(x_unlabeled)
 
                 d_c_real = discriminator_c(real_cat_dist)
-                d_c_fake = discriminator_c(encoder_output_label)
+                d_c_fake = discriminator_c(encoder_output_latent)
 
-                fake_penalty = gradient_penalty(real_cat_dist, encoder_output_label, discriminator_c).to(device)
-                dc_c_loss = -torch.mean(d_c_real) + torch.mean(d_c_fake) + 10.0 * fake_penalty
+                dc_c_real_loss = torch.mean(criterion(d_c_real, target_real))
+                dc_c_fake_loss = torch.mean(criterion(d_c_fake, target_fake))
+
+                dc_c_loss = dc_c_real_loss + dc_c_fake_loss
 
                 discriminator_c_optimizer.zero_grad()
-
                 dc_c_loss.backward()
                 discriminator_c_optimizer.step()
 

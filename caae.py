@@ -45,7 +45,7 @@ class Encoder(nn.Module):
         self.relu3 = nn.ReLU()
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.dropout = nn.Dropout(p=self.keep_prob)
+        self.dropout = nn.Dropout(p=self.keep_prob, inplace=True)
 
     def forward(self, x, supervised=False):
         x = F.pad(x, (1, 2, 1, 2))  # batch * 1 * 32 * 32
@@ -106,7 +106,9 @@ class Decoder(nn.Module):
     def forward(self, x):
 
         x = fullyConnected(x, 64 * 2 * 2)
-        x = x.view(-1, 64, 2, 2)
+        # x = x.view(-1, 64, 2, 2)
+        x = x.view(-1, 2, 2, 64)
+        x = x.permute(0, 3, 1, 2)
 
         x = self.deconv0(x)  # batch * 64 * 2 * 2
         x = self.relu0(x)
@@ -137,29 +139,43 @@ class Disgauss(nn.Module):
 
         self.z_dim = Config.z_dim
 
-        self.ds0 = nn.Linear(self.z_dim, 1000)
-        self.relu0 = nn.ReLU()
-        self.ds1 = nn.Linear(1000, 1000)
-        self.relu1 = nn.ReLU()
-        self.ds2 = nn.Linear(1000, 1)
+        # self.ds0 = nn.Linear(self.z_dim, 1000)
+        # self.relu0 = nn.ReLU()
+        # self.ds1 = nn.Linear(1000, 1000)
+        # self.relu1 = nn.ReLU()
+        # self.ds2 = nn.Linear(1000, 1)
+        # self.sigmoid = nn.Sigmoid()
+
+        self.fc1 = nn.Linear(self.z_dim, 512)
+        self.lere1 = nn.LeakyReLU(0.2, inplace=True)
+        self.fc2 = nn.Linear(512, 256)
+        self.lere2 = nn.LeakyReLU(0.2, inplace=True)
+        self.fc3 = nn.Linear(256, 1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         # batch 10
         #
-        x = self.ds0(x)
-        x = self.relu0(x)
-        # batch 1000
-
-        x = self.ds1(x)
-        x = self.relu1(x)
-        # batch 1000
-
-        x = self.ds2(x)
+        # x = self.ds0(x)
+        # x = self.relu0(x)
+        # # batch 1000
+        #
+        # x = self.ds1(x)
+        # x = self.relu1(x)
+        # # batch 1000
+        #
+        # x = self.ds2(x)
+        # # batch 1
+        #
+        # x = self.sigmoid(x)
         # batch 1
 
+        x = self.fc1(x)
+        x = self.lere1(x)
+        x = self.fc2(x)
+        x = self.lere2(x)
+        x = self.fc3(x)
         x = self.sigmoid(x)
-        # batch 1
 
         return x
 
@@ -170,42 +186,42 @@ class Discateg(nn.Module):
 
         self.n_labels = Config.n_labels
 
-        self.ds0 = nn.Linear(self.n_labels, 1000)
-        self.relu0 = nn.ReLU()
-        self.ds1 = nn.Linear(1000, 1000)
-        self.relu1 = nn.ReLU()
-        self.ds2 = nn.Linear(1000, 1)
+        # self.ds0 = nn.Linear(self.n_labels, 1000)
+        # self.relu0 = nn.ReLU()
+        # self.ds1 = nn.Linear(1000, 1000)
+        # self.relu1 = nn.ReLU()
+        # self.ds2 = nn.Linear(1000, 1)
 
-        # self.fc1 = nn.Linear(self.n_labels, 512)
-        # self.lere1 = nn.LeakyReLU(0.2, inplace=True)
-        # self.fc2 = nn.Linear(512, 256)
-        # self.lere2 = nn.LeakyReLU(0.2, inplace=True)
-        # self.fc3 = nn.Linear(256, 1)
+        self.fc1 = nn.Linear(self.n_labels, 512)
+        self.lere1 = nn.LeakyReLU(0.2, inplace=True)
+        self.fc2 = nn.Linear(512, 256)
+        self.lere2 = nn.LeakyReLU(0.2, inplace=True)
+        self.fc3 = nn.Linear(256, 1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         # batch 2
 
-        x = self.ds0(x)
-        x = self.relu0(x)
-        # batch 1000
-
-        x = self.ds1(x)
-        x = self.relu1(x)
-        # batch 1000
-
-        x = self.ds2(x)
-        # batch 1
-
-        x = self.sigmoid(x)
+        # x = self.ds0(x)
+        # x = self.relu0(x)
+        # # batch 1000
+        #
+        # x = self.ds1(x)
+        # x = self.relu1(x)
+        # # batch 1000
+        #
+        # x = self.ds2(x)
+        # # batch 1
+        #
+        # x = self.sigmoid(x)
         # batch 1
 
         # vanilla gan
-        # x = self.fc1(x)
-        # x = self.lere1(x)
-        # x = self.fc2(x)
-        # x = self.lere2(x)
-        # x = self.fc3(x)
-        # x = self.sigmoid(x)
+        x = self.fc1(x)
+        x = self.lere1(x)
+        x = self.fc2(x)
+        x = self.lere2(x)
+        x = self.fc3(x)
+        x = self.sigmoid(x)
 
         return x
