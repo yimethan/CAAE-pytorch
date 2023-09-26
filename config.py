@@ -11,24 +11,23 @@ class Config:
     z_dim = 10
     n_labels = 2
 
-    keep_prob = 0.15
-    # keep_prob = 0.5
+    keep_prob = 0.25
 
     beta1 = 0.5
     beta2 = 0.9
     beta1_sup = 0.9
 
-    supervised_lr = 1e-3
-    reconstruction_lr = 1e-4
-    regularization_lr = 1e-4
+    supervised_lr = 0.0001
+    reconstruction_lr = 0.0001
+    regularization_lr = 0.0001
 
     gamma = 0.1
-
-    step_size = 5
+    step_size = 50
 
     data_root = '../dataset/CHD/id_image_29/'
     save_path = '.'
 
-    labeled_percentage = 0.4
+    labeled_percentage = 0.1
+
 
 

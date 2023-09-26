@@ -50,7 +50,7 @@ for attack in attacks:
             img = np.vstack([img, j])
 
         img = np.delete(img, 0, axis=0)
-        img = Image.fromarray(img.astype(np.uint8) * 255)
+        img = Image.fromarray(img.astype(np.uint8))
 
         full_save_path = save_path + attack
 
@@ -64,3 +64,18 @@ for attack in attacks:
             print('{}th data in process...'.format(img_num))
 
     print(attack + ', Done converting to {} images'.format(img_num))
+
+for attack in attacks:
+
+    under = os.listdir(os.path.join(save_path, attack))
+    print(len(under), attack, 'images')
+
+    for i in under:
+        full = os.path.join(save_path, attack, i)
+        img = Image.open(full)
+        size = img.size
+
+        if size[0] != 29 or size[1] != 29:
+            print(full)
+
+        img.close()

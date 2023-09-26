@@ -2,5 +2,7 @@ original
 .ipynb_checkpoints
 scalars.json
 runs
+runs_1
 .idea/
 __pycache__/
+imageData.png
