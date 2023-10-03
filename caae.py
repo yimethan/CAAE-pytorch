@@ -20,6 +20,12 @@ def fullyConnected(input, output_size):
     fc_output = fc_layer(flattened_input)
 
     return fc_output
+# def fullyConnected(x, output_size):
+#      x = x.to(device)
+#     with torch.cuda.amp.autocast(enabled=True):
+#         input_size = torch.prod(torch.tensor(x.size()[1:])).to(device)
+#         fc = nn.Linear(input_size, output_size)
+#         return fc(x.view(-1, input_size))
 
 
 class Encoder(nn.Module):
@@ -45,7 +51,7 @@ class Encoder(nn.Module):
         self.relu3 = nn.ReLU()
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.dropout = nn.Dropout(p=self.keep_prob, inplace=True)
+        self.dropout = nn.Dropout(p=self.keep_prob)
 
     def forward(self, x, supervised=False):
         x = F.pad(x, (1, 2, 1, 2))  # batch * 1 * 32 * 32
@@ -97,8 +103,6 @@ class Decoder(nn.Module):
         self.relu3 = nn.ReLU()
         self.up3 = self.upsample
 
-        # self.shape_check = nn.Dropout(p=0)
-
     def upsample(self, x, factor=2):
         x = F.interpolate(x, scale_factor=factor, mode='bilinear', align_corners=False)
         return x
@@ -112,19 +116,17 @@ class Decoder(nn.Module):
         x = self.relu0(x)
         x = self.up0(x)  # batch * 64 * 4 * 4
 
-        x = self.deconv1(x)  # batch * 4 * 4 * 32
+        x = self.deconv1(x)  # batch * 32 * 4 * 4
         x = self.relu1(x)
-        x = self.up1(x)  # batch * 8 * 8 * 32
+        x = self.up1(x)  # batch * 32 * 8 * 8
 
-        x = self.deconv2(x)  # batch * 8 * 8 * 32
+        x = self.deconv2(x)  # batch * 32 * 8 * 8
         x = self.relu2(x)
-        x = self.up2(x)  # batch * 16 * 16 * 32
+        x = self.up2(x)  # batch * 32 * 16 * 16
 
-        x = self.deconv3(x)  # batch * 16 * 16 * 1
+        x = self.deconv3(x)  # batch * 1 * 16 * 16
         x = self.relu3(x)
-        x = self.up3(x)  # batch * 32 * 32 * 1
-
-        # x = self.shape_check(x)
+        x = self.up3(x)  # batch * 1 * 32 * 32
 
         x = x[:, :, 1:30, 1:30]
 
@@ -144,13 +146,6 @@ class Disgauss(nn.Module):
         self.ds2 = nn.Linear(1000, 1)
         self.sigmoid = nn.Sigmoid()
 
-        # self.fc1 = nn.Linear(self.z_dim, 512)
-        # self.lere1 = nn.LeakyReLU(0.2, inplace=True)
-        # self.fc2 = nn.Linear(512, 256)
-        # self.lere2 = nn.LeakyReLU(0.2, inplace=True)
-        # self.fc3 = nn.Linear(256, 1)
-        # self.sigmoid = nn.Sigmoid()
-
     def forward(self, x):
         # batch 10
 
@@ -168,13 +163,6 @@ class Disgauss(nn.Module):
         x = self.sigmoid(x)
         # batch 1
 
-        # x = self.fc1(x)
-        # x = self.lere1(x)
-        # x = self.fc2(x)
-        # x = self.lere2(x)
-        # x = self.fc3(x)
-        # x = self.sigmoid(x)
-
         return x
 
 
@@ -189,12 +177,6 @@ class Discateg(nn.Module):
         self.ds1 = nn.Linear(1000, 1000)
         self.relu1 = nn.ReLU()
         self.ds2 = nn.Linear(1000, 1)
-
-        # self.fc1 = nn.Linear(self.n_labels, 512)
-        # self.lere1 = nn.LeakyReLU(0.2, inplace=True)
-        # self.fc2 = nn.Linear(512, 256)
-        # self.lere2 = nn.LeakyReLU(0.2, inplace=True)
-        # self.fc3 = nn.Linear(256, 1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -213,13 +195,5 @@ class Discateg(nn.Module):
 
         x = self.sigmoid(x)
         # batch 1
-
-        # vanilla gan
-        # x = self.fc1(x)
-        # x = self.lere1(x)
-        # x = self.fc2(x)
-        # x = self.lere2(x)
-        # x = self.fc3(x)
-        # x = self.sigmoid(x)
 
         return x

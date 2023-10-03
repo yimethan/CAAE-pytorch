@@ -8,7 +8,7 @@ from torch.utils.data import random_split, DataLoader
 import torchsummary
 
 from config import Config
-from caae import *
+from aae import *
 from load_dataset import *
 
 torch.autograd.set_detect_anomaly(True)
@@ -103,9 +103,13 @@ train_labeled_loader = DataLoader(train_labeled_data, batch_size=Config.batch_si
 train_unlabeled_loader = DataLoader(train_unlabeled_data, batch_size=Config.batch_size)
 test_loader = DataLoader(test_data, batch_size=Config.batch_size)
 
+print('ENCODER SUMMARY')
 torchsummary.summary(encoder, (1, 29, 29))
+print('DECODER SUMMARY')
 torchsummary.summary(decoder, (12,))
+print('DISC GAUSSIAN SUMMARY')
 torchsummary.summary(discriminator_g, (10,))
+print('DISC CATEGORICAL SUMMARY')
 torchsummary.summary(discriminator_c, (2,))
 
 
@@ -113,7 +117,6 @@ def train():
     step = 0
 
     for epoch in range(Config.epochs):
-
         encoder.train()
         decoder.train()
         discriminator_g.train()
@@ -122,7 +125,6 @@ def train():
         print("------------------ Epoch {}/{} ------------------".format(epoch, Config.epochs))
 
         for batch_idx, unlabeled in enumerate(train_unlabeled_loader):
-
             labeled = next(iter(train_labeled_loader))
 
             x_labeled, y_labeled = labeled['input'].to(device), labeled['label'].to(device)
@@ -132,12 +134,12 @@ def train():
             generator_optimizer.zero_grad()
             supervised_encoder_optimizer.zero_grad()
 
-            # z_real_dist = torch.randn(Config.batch_size, Config.z_dim) * 5.
-            # real_cat_dist = torch.randint(low=0, high=Config.n_labels, size=(Config.batch_size,))
-            # real_cat_dist = torch.eye(Config.n_labels)[real_cat_dist]  # one-hot encoded
-            #
-            # z_real_dist = z_real_dist.to(device)
-            # real_cat_dist = real_cat_dist.to(device)
+            z_real_dist = torch.randn(Config.batch_size, Config.z_dim) * 5.
+            real_cat_dist = torch.randint(low=0, high=Config.n_labels, size=(Config.batch_size,))
+            real_cat_dist = torch.eye(Config.n_labels)[real_cat_dist]  # one-hot encoded
+
+            z_real_dist = z_real_dist.to(device)
+            real_cat_dist = real_cat_dist.to(device)
 
             # TODO: autoencoder
 
@@ -150,15 +152,9 @@ def train():
             autoencoder_loss.backward()
             autoencoder_optimizer.step()
 
+
             # wgan-gp
             for _ in range(5):
-                z_real_dist = torch.randn(Config.batch_size, Config.z_dim) * 5.
-                real_cat_dist = torch.randint(low=0, high=Config.n_labels, size=(Config.batch_size,))
-                real_cat_dist = torch.eye(Config.n_labels)[real_cat_dist]  # one-hot encoded
-
-                z_real_dist = z_real_dist.to(device)
-                real_cat_dist = real_cat_dist.to(device)
-
                 # TODO: gaussian discriminator
 
                 encoder_output_label, encoder_output_latent = encoder(x_unlabeled)
@@ -246,7 +242,6 @@ def test(epoch):
 
     with torch.no_grad():
         for batch_idx, inputs in enumerate(test_loader):
-
             x = inputs['input'].to(device)
             y = inputs['label'].to(device)
 

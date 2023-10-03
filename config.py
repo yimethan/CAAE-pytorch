@@ -3,7 +3,7 @@ class Config:
     epochs = 100
     batch_size = 64
 
-    input_dim = 29 * 29
+    input_dim = 32 * 32
 
     n_l1 = 1000
     n_l2 = 1000
